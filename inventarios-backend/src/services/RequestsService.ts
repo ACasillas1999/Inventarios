@@ -1,5 +1,7 @@
 import { getLocalPool } from '../config/database'
 import { RowDataPacket } from 'mysql2/promise'
+import { emitRequestStatus } from '../websocket/server'
+import { auditService } from './AuditService'
 
 export type RequestStatus = 'pendiente' | 'en_revision' | 'ajustado' | 'rechazado'
 
@@ -150,6 +152,24 @@ export class RequestsService {
 
     const updated = await this.getById(id)
     if (!updated) throw new Error('Request not found after update')
+
+    // Emitir cambio de estado
+    if (data.status && data.status !== existing.status) {
+      emitRequestStatus(id, updated.folio, existing.status, data.status)
+    }
+
+    // Log the review/update
+    if (data.reviewed_by_user_id) {
+      await auditService.log({
+        user_id: data.reviewed_by_user_id,
+        action: 'UPDATE_REQUEST',
+        entity_type: 'request',
+        entity_id: id,
+        old_values: existing,
+        new_values: data
+      })
+    }
+
     return updated
   }
 }

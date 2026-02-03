@@ -161,6 +161,83 @@ export const emitRequestStatus = (
 }
 
 /**
+ * Emite un evento cuando se crea una nueva solicitud
+ */
+export const emitRequestCreated = (request: any): void => {
+  if (!io) return
+
+  io.emit('request_created', {
+    type: 'request_created',
+    data: request,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Request created emitted: ${request.folio}`)
+}
+
+/**
+ * Emite un evento cuando se crea un nuevo conteo
+ */
+export const emitCountCreated = (count: any): void => {
+  if (!io) return
+
+  io.emit('count_created', {
+    type: 'count_created',
+    data: count,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Count created emitted: ${count.folio}`)
+}
+
+/**
+ * Emite un evento cuando cambia el estado de un conteo
+ */
+export const emitCountStatusChanged = (
+  countId: number,
+  folio: string,
+  oldStatus: string,
+  newStatus: string
+): void => {
+  if (!io) return
+
+  io.emit('count_status_changed', {
+    type: 'count_status_changed',
+    data: {
+      count_id: countId,
+      folio,
+      old_status: oldStatus,
+      new_status: newStatus
+    },
+    timestamp: new Date()
+  })
+
+  // También emitir a la sala específica del conteo
+  io.to(`count:${countId}`).emit('status_updated', {
+    count_id: countId,
+    status: newStatus,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Count status changed emitted for ${folio}: ${oldStatus} -> ${newStatus}`)
+}
+
+/**
+ * Emite un evento cuando se agrega un detalle a un conteo
+ */
+export const emitCountDetailAdded = (countId: number, detail: any): void => {
+  if (!io) return
+
+  io.to(`count:${countId}`).emit('detail_added', {
+    count_id: countId,
+    detail,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Count detail added emitted for count ${countId}`)
+}
+
+/**
  * Emite un evento personalizado a una sala específica
  */
 export const emitToRoom = (room: string, event: string, data: any): void => {
@@ -186,12 +263,53 @@ export const emitToRole = (roleId: number, event: string, data: any): void => {
   emitToRoom(`role:${roleId}`, event, data)
 }
 
+/**
+ * Emite un evento cuando se reasigna un conteo
+ */
+export const emitCountReassigned = (
+  countId: number,
+  folio: string,
+  oldResponsibleId: number,
+  newResponsibleId: number
+): void => {
+  if (!io) return
+
+  io.emit('count_reassigned', {
+    type: 'count_reassigned',
+    data: {
+      count_id: countId,
+      folio,
+      old_responsible_id: oldResponsibleId,
+      new_responsible_id: newResponsibleId
+    },
+    timestamp: new Date()
+  })
+
+  // También emitir a la sala específica del conteo
+  io.to(`count:${countId}`).emit('reassigned', {
+    count_id: countId,
+    responsible_id: newResponsibleId,
+    timestamp: new Date()
+  })
+
+  // Emitir a salas de usuario
+  io.to(`user:${oldResponsibleId}`).emit('count_unassigned', { count_id: countId, folio })
+  io.to(`user:${newResponsibleId}`).emit('count_assigned', { count_id: countId, folio })
+
+  logger.debug(`Count reassigned emitted for ${folio}: ${oldResponsibleId} -> ${newResponsibleId}`)
+}
+
 export default {
   initializeWebSocket,
   getWebSocketServer,
   emitStockUpdate,
   emitCountProgress,
   emitRequestStatus,
+  emitRequestCreated,
+  emitCountCreated,
+  emitCountStatusChanged,
+  emitCountDetailAdded,
+  emitCountReassigned,
   emitToRoom,
   emitToUser,
   emitToRole

@@ -10,6 +10,12 @@ import {
   UpdateCountDetailRequest
 } from '../types'
 import { PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise'
+import { specialLinesService } from './SpecialLinesService'
+import { whatsappService, type CountAlertData } from './WhatsAppService'
+import { emitCountStatusChanged, emitCountReassigned, emitCountCreated, emitRequestCreated, emitCountDetailAdded } from '../websocket/server'
+import { notificationService } from './NotificationService'
+import { auditService } from './AuditService'
+import { settingsService } from './SettingsService'
 
 /**
  * CountsService - Servicio para gestionar conteos en la base de datos local
@@ -115,42 +121,59 @@ export class CountsService {
     return results
   }
 
-  /**
-   * Genera un folio único para el conteo
-   */
-  private async generateFolio(): Promise<string> {
-    const folios = await this.generateMultipleFolios(1)
-    return folios[0]
-  }
 
   /**
-   * Genera múltiples folios únicos secuenciales
+   * Genera múltiples folios únicos secuenciales basados en la configuración
    */
   private async generateMultipleFolios(count: number): Promise<string[]> {
     const now = new Date()
-    const year = now.getFullYear()
+    const year = String(now.getFullYear())
     const month = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
 
-    // Obtener el último número de folio del mes
+    // Obtener formato de folio de la configuración
+    const format = await settingsService.getSettingValue('folio_format', 'CNT-{YEAR}{MONTH}-{NUMBER}')
+
+    // Extraer prefijo antes del {NUMBER} para buscar el último
+    const prefixMatch = format.match(/^(.*)\{NUMBER\}/)
+    let searchPattern = 'CNT-%'
+    let prefix = 'CNT-'
+
+    if (prefixMatch) {
+      prefix = prefixMatch[1]
+        .replace('{YEAR}', year)
+        .replace('{MONTH}', month)
+        .replace('{DAY}', day)
+      searchPattern = `${prefix}%`
+    }
+
+    // Obtener el último número de folio
     const [rows] = await this.pool.execute<RowDataPacket[]>(
       `SELECT folio FROM counts
        WHERE folio LIKE ?
        ORDER BY id DESC LIMIT 1`,
-      [`CNT-${year}${month}-%`]
+      [searchPattern]
     )
 
     let number = 1
     if (rows.length > 0) {
       const lastFolio = rows[0].folio as string
-      const match = lastFolio.match(/-(\d+)$/)
-      if (match) {
-        number = parseInt(match[1]) + 1
+      // Intentar extraer el número del final
+      const numberMatch = lastFolio.substring(prefix.length).match(/^(\d+)/)
+      if (numberMatch) {
+        number = parseInt(numberMatch[1]) + 1
       }
     }
 
     const folios: string[] = []
     for (let i = 0; i < count; i++) {
-      folios.push(`CNT-${year}${month}-${String(number + i).padStart(4, '0')}`)
+      const numStr = String(number + i).padStart(4, '0')
+      const folio = format
+        .replace('{YEAR}', year)
+        .replace('{MONTH}', month)
+        .replace('{DAY}', day)
+        .replace('{NUMBER}', numStr)
+      folios.push(folio)
     }
     return folios
   }
@@ -291,6 +314,63 @@ export class CountsService {
       conn.release()
     }
 
+    // Notificar creación de solicitudes
+    try {
+      const [branchRows] = await this.pool.execute<RowDataPacket[]>(
+        'SELECT name FROM branches WHERE id = ?',
+        [count.branch_id]
+      )
+      const [userRows] = await this.pool.execute<RowDataPacket[]>(
+        'SELECT name FROM users WHERE id = ?',
+        [requestedByUserId]
+      )
+
+      const branchName = branchRows[0]?.name || `Sucursal ${count.branch_id}`
+      const userName = userRows[0]?.name || 'Usuario'
+
+      for (const req of toCreate) {
+        await notificationService.notifyRequestCreated(
+          count.folio,
+          branchName,
+          count.branch_id,
+          req.item_code,
+          req.difference,
+          userName,
+          'count'
+        )
+
+        // Find the folio for this request from the folios array generated earlier
+        const reqIdx = toCreate.indexOf(req)
+        const reqFolio = folios[reqIdx]
+
+        // Emit realization event
+        emitRequestCreated({
+          folio: reqFolio,
+          count_id: countId,
+          item_code: req.item_code,
+          branch_id: count.branch_id,
+          difference: req.difference
+        })
+      }
+    } catch (err) {
+      logger.error('Error notifying requests from count:', err)
+    }
+
+    // Log the request creation
+    if (toCreate.length > 0) {
+      await auditService.log({
+        user_id: requestedByUserId,
+        action: 'CREATE_REQUESTS_BATCH',
+        entity_type: 'count',
+        entity_id: countId,
+        new_values: {
+          count: toCreate.length,
+          folios: folios,
+          items: toCreate.map(d => d.item_code)
+        }
+      })
+    }
+
     return {
       created: toCreate.length,
       skipped: differences.length - toCreate.length,
@@ -384,7 +464,8 @@ export class CountsService {
     }
 
     if (finalItemsToCount.length === 0) {
-      throw new Error('All items have already been counted in the specified period')
+      logger.info(`All ${itemsInWarehouse.length} items were excluded as they were already counted. No counts created.`)
+      return []
     }
 
     // Step 3: Generate all folios at once
@@ -409,12 +490,12 @@ export class CountsService {
         const query = `
           INSERT INTO counts (
             folio, branch_id, almacen, type, classification, priority, status,
-            responsible_user_id, created_by_user_id, scheduled_date,
+            responsible_user_id, assigned_at, created_by_user_id, scheduled_date,
             notes, tolerance_percentage, started_at, finished_at, closed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
 
-        const [result] = await conn.execute<ResultSetHeader>(query, [
+        const params: any[] = [
           folio,
           data.branch_id,
           selectedWarehouse,
@@ -423,6 +504,7 @@ export class CountsService {
           data.priority || 'media',
           initialStatus,
           data.responsible_user_id,
+          data.responsible_user_id ? now : null, // assigned_at
           userId,
           data.scheduled_date || null,
           data.notes || null,
@@ -430,7 +512,9 @@ export class CountsService {
           isDirectAdjustment ? now : null,
           isDirectAdjustment ? now : null,
           isDirectAdjustment ? now : null
-        ])
+        ]
+
+        const [result] = await conn.execute<ResultSetHeader>(query, params)
 
         const insertId = result.insertId
         createdCountIds.push(insertId)
@@ -478,60 +562,37 @@ export class CountsService {
       const count = await this.getCountById(id)
       if (count) {
         createdCounts.push(count)
+        // Emitir evento de creación
+        emitCountCreated(count)
+
+        // Notificar asignación si hay un responsable
+        if (count.responsible_user_id) {
+          this.notifyAssignment(count, false)
+        }
       }
     }
 
     logger.info(`Successfully created and returned ${createdCounts.length} counts`)
+
+    // Log the creation (bulk)
+    if (createdCounts.length > 0) {
+      await auditService.log({
+        user_id: userId,
+        action: 'CREATE_COUNTS',
+        entity_type: 'count',
+        entity_id: createdCounts[0].id, // Reference the first one or we could log individual but bulk is better here
+        new_values: {
+          count: createdCounts.length,
+          folios: createdCounts.map(c => c.folio),
+          branch_id: data.branch_id,
+          type: data.type
+        }
+      })
+    }
+
     return createdCounts
   }
 
-  /**
-   * Obtiene un mapa de warehouse_id -> item_codes para los artículos que existen en cada almacén
-   */
-  private async getItemsByWarehouse(
-    branchId: number,
-    itemCodes: string[]
-  ): Promise<Map<number, string[]>> {
-    const map = new Map<number, string[]>()
-
-    for (let i = 0; i < itemCodes.length; i += this.SEED_CHUNK_SIZE) {
-      const chunk = itemCodes.slice(i, i + this.SEED_CHUNK_SIZE)
-      const placeholders = chunk.map(() => '?').join(',')
-
-      const query = `
-        SELECT
-          aa.Almacen as warehouse_id,
-          aa.Clave_Articulo as item_code
-        FROM articuloalm aa
-        WHERE aa.Clave_Articulo IN (${placeholders})
-          AND aa.Existencia_Fisica > 0
-        ORDER BY aa.Almacen, aa.Clave_Articulo
-      `
-
-      try {
-        const results = await this.connectionManager.executeQuery<{
-          warehouse_id: number
-          item_code: string
-        }>(branchId, query, chunk)
-
-        for (const row of results) {
-          const wh = Number(row.warehouse_id)
-          const code = String(row.item_code)
-          if (!map.has(wh)) {
-            map.set(wh, [])
-          }
-          map.get(wh)!.push(code)
-        }
-      } catch (err: any) {
-        if (err?.code === 'ER_NO_SUCH_TABLE') {
-          throw new Error(`Branch ${branchId} missing required table articuloalm`)
-        }
-        throw err
-      }
-    }
-
-    return map
-  }
 
   private normalizeItemCodes(items?: string[]): string[] {
     if (!Array.isArray(items)) return []
@@ -856,6 +917,7 @@ export class CountsService {
     date_to?: string
     scheduled_from?: string
     scheduled_to?: string
+    search?: string
     limit?: number
     offset?: number
   }): Promise<{ counts: Count[]; total: number }> {
@@ -927,6 +989,23 @@ export class CountsService {
       params.push(filters.scheduled_to)
     }
 
+    if (filters.search) {
+      const search = `%${filters.search}%`
+      const searchSql = ` AND (
+        c.folio LIKE ? 
+        OR u.name LIKE ? 
+        OR c.classification LIKE ? 
+        OR c.status LIKE ?
+        OR EXISTS (
+          SELECT 1 FROM count_details cd2 
+          WHERE cd2.count_id = c.id AND cd2.item_code LIKE ?
+        )
+      )`
+      query += searchSql
+      countQuery += searchSql
+      params.push(search, search, search, search, search)
+    }
+
     query += ' GROUP BY c.id'
     query += ' ORDER BY c.folio DESC'
 
@@ -943,16 +1022,111 @@ export class CountsService {
     const [counts] = await this.pool.execute<RowDataPacket[]>(query, params)
     const [countResult] = await this.pool.execute<RowDataPacket[]>(countQuery, params)
 
+    // Get active special lines for detection
+    const [specialLinesRows] = await this.pool.execute<RowDataPacket[]>(
+      'SELECT line_code FROM special_lines WHERE is_active = 1'
+    )
+    const activeSpecialLineCodes = new Set(
+      specialLinesRows.map((row: any) => String(row.line_code))
+    )
+
+    // Add has_special_lines field to each count
+    const countsWithSpecialLines = (counts as any[]).map((count) => {
+      let hasSpecialLines = false
+
+      if (activeSpecialLineCodes.size > 0) {
+        // Check item_codes from GROUP_CONCAT
+        const itemCodes = count.item_codes ? String(count.item_codes).split(', ') : []
+
+        for (const itemCode of itemCodes) {
+          if (itemCode && itemCode.length >= 5) {
+            const lineCode = itemCode.substring(0, 5)
+            if (activeSpecialLineCodes.has(lineCode)) {
+              hasSpecialLines = true
+              break
+            }
+          }
+        }
+      }
+
+      return {
+        ...count,
+        has_special_lines: hasSpecialLines
+      }
+    })
+
     return {
-      counts: counts as Count[],
+      counts: countsWithSpecialLines as Count[],
       total: countResult[0].total as number
+    }
+  }
+
+  /**
+   * Refresca el stock de sistema desde el ERP para todos los artículos en un conteo
+   */
+  private async refreshStocksForCount(
+    conn: PoolConnection,
+    countId: number,
+    branchId: number,
+    almacen: number
+  ): Promise<void> {
+    try {
+      // 1. Obtener todos los item_code del conteo
+      const [details] = await conn.execute<RowDataPacket[]>(
+        'SELECT item_code FROM count_details WHERE count_id = ?',
+        [countId]
+      )
+
+      if (details.length === 0) return
+
+      const itemCodes = details.map(d => d.item_code)
+
+      // 2. Consultar stock en el ERP en chunks
+      for (let i = 0; i < itemCodes.length; i += this.SEED_CHUNK_SIZE) {
+        const chunk = itemCodes.slice(i, i + this.SEED_CHUNK_SIZE)
+        const placeholders = chunk.map(() => '?').join(',')
+
+        const stockQuery = `
+          SELECT
+            aa.Clave_Articulo as item_code,
+            aa.Existencia_Fisica as stock
+          FROM articuloalm aa
+          WHERE aa.Clave_Articulo IN (${placeholders})
+            AND aa.Almacen = ?
+        `
+
+        const stockRows = await this.connectionManager.executeQuery<{ item_code: string; stock: number }>(
+          branchId,
+          stockQuery,
+          [...chunk, almacen]
+        )
+
+        const stockByCode = new Map<string, number>()
+        for (const s of stockRows) stockByCode.set(s.item_code, Number(s.stock))
+
+        // 3. Actualizar count_details con los nuevos valores de system_stock
+        for (const itemCode of chunk) {
+          const stock = stockByCode.get(itemCode) || 0
+          await conn.execute(
+            'UPDATE count_details SET system_stock = ? WHERE count_id = ? AND item_code = ?',
+            [stock, countId, itemCode]
+          )
+        }
+      }
+
+      logger.info(`Refreshed system stock for ${itemCodes.length} items in count ${countId} (Branch: ${branchId}, Almacen: ${almacen})`)
+    } catch (err) {
+      logger.error(`Error refreshing stock for count ${countId}:`, err)
+      // No lanzamos error para permitir que el conteo inicie aún si falla el refresco de stock del ERP
+      // Simplemente retornamos un indicador para que el llamante sepa que no se pudo sincronizar
+      throw err // Lo lanzamos pero lo atraparemos en el updateCount para manejarlo suavemente
     }
   }
 
   /**
    * Actualiza un conteo
    */
-  async updateCount(id: number, data: UpdateCountRequest): Promise<Count> {
+  async updateCount(id: number, data: UpdateCountRequest, userId: number): Promise<Count> {
     const existing = await this.getCountById(id)
     if (!existing) {
       throw new Error('Count not found')
@@ -969,6 +1143,9 @@ export class CountsService {
 
       updates.push('status = ?')
       params.push(data.status)
+
+      // Emitir evento de cambio de estado
+      emitCountStatusChanged(id, existing.folio, existing.status, data.status)
 
       // Auto-establecer timestamps según el estado
       if (data.status === 'contando' && !data.started_at) {
@@ -1000,22 +1177,294 @@ export class CountsService {
       params.push(data.closed_at)
     }
 
-    if (updates.length === 0) {
-      throw new Error('No fields to update')
+    if (data.responsible_user_id !== undefined && data.responsible_user_id !== existing.responsible_user_id) {
+      updates.push('responsible_user_id = ?')
+      params.push(data.responsible_user_id)
+
+      // Actualizar timestamps de asignación
+      if (!existing.assigned_at && data.responsible_user_id) {
+        updates.push('assigned_at = NOW()')
+      } else if (data.responsible_user_id) {
+        updates.push('last_reassigned_at = NOW()')
+      }
+
+      // Emitir evento de reasignación
+      emitCountReassigned(id, existing.folio, existing.responsible_user_id, data.responsible_user_id)
+
+      // Notificar al nuevo responsable
+      const updatedCount = await this.getCountById(id)
+      if (updatedCount) {
+        this.notifyAssignment(updatedCount, true)
+      }
     }
 
-    params.push(id)
+    const conn = await this.pool.getConnection()
+    try {
+      await conn.beginTransaction()
 
-    const query = `UPDATE counts SET ${updates.join(', ')} WHERE id = ?`
-    await this.pool.execute(query, params)
+      if (data.status === 'contando' && existing.status === 'pendiente') {
+        // Refrescar stock antes de marcar como contando
+        try {
+          await this.refreshStocksForCount(conn, id, existing.branch_id, existing.almacen)
+        } catch (refreshErr) {
+          logger.warn(`Could not refresh stock for count ${id} due to connection failure, but continuing...`)
+          // Agregamos una nota automática indicando el fallo de sincronización
+          const syncErrorNote = `\n[SISTEMA] No se pudo sincronizar el stock con el ERP el ${new Date().toLocaleString('es-MX')}. Se usará el último stock registrado.`
+          if (data.notes !== undefined) {
+            data.notes += syncErrorNote
+            // Actualizar params para el update posterior si notas están en el set
+          } else {
+            // Si no hay notas nuevas, tenemos que agregarlas al set de updates
+            updates.push('notes = CONCAT(IFNULL(notes, ""), ?)')
+            params.push(syncErrorNote)
+          }
+        }
+      }
+
+      if (updates.length > 0) {
+        // El ID debe ser el último parámetro
+        const query = `UPDATE counts SET ${updates.join(', ')} WHERE id = ?`
+        await conn.execute(query, [...params, id])
+      }
+
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      logger.error(`Error updating count ${id}:`, err)
+      throw err
+    } finally {
+      conn.release()
+    }
 
     const count = await this.getCountById(id)
     if (!count) {
       throw new Error('Count not found after update')
     }
 
+    // Log the update
+    await auditService.log({
+      user_id: userId,
+      action: 'UPDATE_COUNT',
+      entity_type: 'count',
+      entity_id: id,
+      old_values: existing,
+      new_values: data
+    })
+
+    let specialLineAlerts: any = null
+    // Si se está cerrando el conteo, verificar líneas especiales
+    if ((data.status === 'contado' || data.status === 'cerrado') && existing.status !== data.status) {
+      try {
+        const [branchRows] = await this.pool.execute<RowDataPacket[]>(
+          'SELECT name FROM branches WHERE id = ?',
+          [count.branch_id]
+        )
+        const branchName = branchRows[0]?.name || `Sucursal ${count.branch_id}`
+
+        // Notificar finalización de conteo
+        await notificationService.notifyCountFinished(
+          count.folio,
+          branchName,
+          count.branch_id,
+          count.responsible_user_name || 'Un surtidor'
+        )
+
+        // Si es cierre final, verificar líneas especiales (Mantiene lógica anterior)
+        if (data.status === 'cerrado') {
+          specialLineAlerts = await this.checkSpecialLinesAndNotify(count)
+        }
+      } catch (err) {
+        logger.error(`Error notifying count finish for ${id}:`, err)
+      }
+    }
+
     logger.info(`Count ${id} updated`)
-    return count
+    return { ...count, specialLineAlerts } as any
+  }
+
+  /**
+   * Helper para notificar asignación/reasignación
+   */
+  private async notifyAssignment(count: Count, isReassignment: boolean): Promise<void> {
+    try {
+      // Obtener info del usuario y sucursal
+      const [userRows] = await this.pool.execute<RowDataPacket[]>(
+        'SELECT name, phone_number FROM users WHERE id = ?',
+        [count.responsible_user_id]
+      )
+
+      const [branchRows] = await this.pool.execute<RowDataPacket[]>(
+        'SELECT name FROM branches WHERE id = ?',
+        [count.branch_id]
+      )
+
+      if (userRows.length === 0 || branchRows.length === 0) return
+
+      const user = userRows[0]
+      const branch = branchRows[0]
+
+      // Contar artículos 
+      const [itemRows] = await this.pool.execute<RowDataPacket[]>(
+        'SELECT COUNT(*) as total FROM count_details WHERE count_id = ?',
+        [count.id]
+      )
+      const itemsCount = itemRows[0]?.total || 1
+
+      if (isReassignment) {
+        await notificationService.sendReassignmentNotification(
+          user.name,
+          user.phone_number,
+          count.folio,
+          branch.name,
+          itemsCount
+        )
+      } else {
+        await notificationService.sendAssignmentNotification(
+          user.name,
+          user.phone_number,
+          count.folio,
+          branch.name,
+          itemsCount
+        )
+      }
+    } catch (err) {
+      logger.error(`Error notifying assignment for count ${count.id}:`, err)
+    }
+  }
+
+  /**
+   * Verifica si hay artículos de líneas especiales con diferencias significativas
+   * y envía notificaciones por WhatsApp
+   */
+  private async checkSpecialLinesAndNotify(count: Count): Promise<any> {
+    // Obtener detalles del conteo con diferencias
+    const [detailsRows] = await this.pool.execute<RowDataPacket[]>(
+      `
+      SELECT
+        cd.item_code,
+        cd.item_description,
+        cd.system_stock,
+        cd.counted_stock,
+        cd.difference,
+        cd.difference_percentage
+      FROM count_details cd
+      WHERE cd.count_id = ?
+        AND cd.counted_stock IS NOT NULL
+        AND cd.counted_stock != cd.system_stock
+      ORDER BY ABS(cd.difference) DESC
+      `,
+      [count.id]
+    )
+
+    if (detailsRows.length === 0) {
+      logger.info(`Count ${count.id} has no differences, skipping special lines check`)
+      return { processed: false, reason: 'no_differences' }
+    }
+
+    // Agrupar artículos por línea especial
+    const specialLineAlerts = new Map<string, {
+      line: any
+      items: Array<{
+        itemCode: string
+        description: string
+        expected: number
+        counted: number
+        difference: number
+        differencePercentage: number
+      }>
+    }>()
+
+    for (const row of detailsRows) {
+      const itemCode = String(row.item_code)
+
+      // Verificar si pertenece a una línea especial
+      const specialLine = await specialLinesService.checkItemBelongsToSpecialLine(itemCode)
+
+      if (!specialLine) continue
+
+      const diffPercentage = Math.abs(Number(row.difference_percentage || 0))
+
+      // Verificar si excede la tolerancia
+      if (diffPercentage > specialLine.tolerance_percentage) {
+        const lineCode = specialLine.line_code
+
+        if (!specialLineAlerts.has(lineCode)) {
+          specialLineAlerts.set(lineCode, {
+            line: specialLine,
+            items: []
+          })
+        }
+
+        specialLineAlerts.get(lineCode)!.items.push({
+          itemCode: itemCode,
+          description: String(row.item_description || itemCode),
+          expected: Number(row.system_stock),
+          counted: Number(row.counted_stock),
+          difference: Number(row.difference),
+          differencePercentage: Number(row.difference_percentage || 0)
+        })
+      }
+    }
+
+    const results: any[] = []
+
+    // Enviar notificaciones para cada línea especial afectada
+    for (const [lineCode, alert] of specialLineAlerts) {
+      const whatsappNumbers = specialLinesService.getWhatsAppNumbers(alert.line)
+
+      if (whatsappNumbers.length === 0) {
+        logger.warn(`Special line ${lineCode} has no WhatsApp numbers configured`)
+        results.push({ lineCode, status: 'skipped', reason: 'no_whatsapp_numbers' })
+        continue
+      }
+
+      // Obtener nombre de sucursal
+      let branchName = `Sucursal ${count.branch_id}`
+      try {
+        const [branchRows] = await this.pool.execute<RowDataPacket[]>(
+          'SELECT name FROM branches WHERE id = ?',
+          [count.branch_id]
+        )
+        if (branchRows.length > 0) {
+          branchName = String(branchRows[0].name)
+        }
+      } catch (err) {
+        logger.error('Error fetching branch name:', err)
+      }
+
+      const alertData: CountAlertData = {
+        folio: count.folio,
+        branchName: branchName,
+        lineCode: lineCode,
+        lineName: alert.line.line_name || lineCode,
+        itemsWithDifferences: alert.items
+      }
+
+      try {
+        const result = await whatsappService.sendCountAlert(whatsappNumbers, alertData)
+        logger.info(
+          `WhatsApp alerts sent for special line ${lineCode} in count ${count.folio}: ` +
+          `${result.sent} sent, ${result.failed} failed`
+        )
+        // Include full result with details for debugging
+        results.push({ lineCode, status: 'sent', result })
+      } catch (err) {
+        logger.error(`Error sending WhatsApp alert for line ${lineCode}:`, err)
+        results.push({ lineCode, status: 'error', error: err })
+      }
+    }
+
+    if (specialLineAlerts.size > 0) {
+      logger.info(
+        `Processed ${specialLineAlerts.size} special line(s) with significant differences in count ${count.folio}`
+      )
+    }
+
+    return {
+      processed: true,
+      linesDetected: specialLineAlerts.size,
+      details: results
+    }
   }
 
   /**
@@ -1052,6 +1501,10 @@ export class CountsService {
     }
 
     logger.info(`Count detail created for count ${countId}, item ${data.item_code}, warehouse ${data.warehouse_id}`)
+
+    // Emitir detalle agregado
+    emitCountDetailAdded(countId, detail)
+
     return detail
   }
 
@@ -1086,7 +1539,7 @@ export class CountsService {
   /**
    * Actualiza un detalle de conteo
    */
-  async updateCountDetail(id: number, data: UpdateCountDetailRequest): Promise<CountDetail> {
+  async updateCountDetail(id: number, data: UpdateCountDetailRequest, userId: number): Promise<CountDetail> {
     const existing = await this.getCountDetailById(id)
     if (!existing) {
       throw new Error('Count detail not found')
@@ -1124,13 +1577,15 @@ export class CountsService {
           [countId]
         )
         const pending = Number(pendingRows?.[0]?.pending ?? 0)
+
         if (pending === 0) {
-          await this.pool.execute(
-            `UPDATE counts
-             SET status = 'cerrado', closed_at = NOW()
-             WHERE id = ? AND status = 'contando'`,
-            [countId]
-          )
+          // Usar updateCount para asegurar que se ejecuten los side effects (notificaciones)
+          const updatedCount: any = await this.updateCount(countId, { status: 'cerrado' }, userId)
+
+          // Si hay alertas, guardarlas temporalmente para retornarlas
+          if (updatedCount.specialLineAlerts) {
+            (this as any)._tempAlerts = updatedCount.specialLineAlerts
+          }
         }
       }
     } catch (err) {
@@ -1143,6 +1598,14 @@ export class CountsService {
     }
 
     logger.info(`Count detail ${id} updated`)
+
+    // Attach alerts if they were captured during auto-close
+    const alertData = (this as any)._tempAlerts
+    if (alertData) {
+      delete (this as any)._tempAlerts
+      return { ...detail, specialLineAlerts: alertData } as any
+    }
+
     return detail
   }
 
@@ -1170,9 +1633,18 @@ export class CountsService {
   /**
    * Elimina un conteo (soft delete cambiando estado)
    */
-  async deleteCount(id: number): Promise<void> {
+  async deleteCount(id: number, userId: number): Promise<void> {
+    const existing = await this.getCountById(id)
     await this.pool.execute('DELETE FROM counts WHERE id = ?', [id])
     logger.info(`Count ${id} deleted`)
+
+    await auditService.log({
+      user_id: userId,
+      action: 'DELETE_COUNT',
+      entity_type: 'count',
+      entity_id: id,
+      old_values: existing
+    })
   }
 
   /**

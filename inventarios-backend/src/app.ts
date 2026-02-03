@@ -18,6 +18,7 @@ import { errorHandler, notFoundHandler } from './middlewares/errorHandler'
 import { ConnectionManager } from './connections/ConnectionManager'
 import { getBranchDatabases, getLocalPool } from './config/database'
 import { initializeWebSocket } from './websocket/server'
+import { ensureBaseSettings } from './utils/initSettings'
 
 // Importar rutas
 import authRoutes from './routes/auth.routes'
@@ -27,6 +28,10 @@ import branchesRoutes from './routes/branches.routes'
 import usersRoutes from './routes/users.routes'
 import requestsRoutes from './routes/requests.routes'
 import rolesRoutes from './routes/roles.routes'
+import specialLinesRoutes from './routes/special-lines.routes'
+import reportsRoutes from './routes/reports.routes'
+import auditRoutes from './routes/audit.routes'
+import settingsRoutes from './routes/settings.routes'
 
 // Constantes
 const PORT = parseInt(process.env.PORT || '3000')
@@ -86,6 +91,10 @@ const createApp = (): Application => {
   app.use('/api/users', usersRoutes)
   app.use('/api/requests', requestsRoutes)
   app.use('/api/roles', rolesRoutes)
+  app.use('/api/special-lines', specialLinesRoutes)
+  app.use('/api/reports', reportsRoutes)
+  app.use('/api/audit', auditRoutes)
+  app.use('/api/settings', settingsRoutes)
 
   // Ruta raíz
   app.get('/', (_req: Request, res: Response) => {
@@ -125,6 +134,9 @@ const initializeDatabases = async (): Promise<void> => {
       await connectionManager.initializeBranches(branchDatabases)
       logger.info(`${connectionManager.getConnectedBranchesCount()} of ${branchDatabases.length} branch databases connected`)
     }
+
+    // Asegurar configuraciones base
+    await ensureBaseSettings()
   } catch (error) {
     logger.error('Failed to initialize databases:', error)
     throw error

@@ -142,6 +142,7 @@ export const listCounts = async (req: AuthRequest, res: Response): Promise<void>
       date_to: req.query.date_to as string | undefined,
       scheduled_from: req.query.scheduled_from as string | undefined,
       scheduled_to: req.query.scheduled_to as string | undefined,
+      search: req.query.search as string | undefined,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
       offset: req.query.offset ? parseInt(req.query.offset as string) : 0
     }
@@ -169,7 +170,13 @@ export const updateCount = async (req: AuthRequest, res: Response): Promise<void
       return
     }
 
-    const count = await countsService.updateCount(id, data)
+    const userId = req.user?.id
+    if (!userId) {
+      res.status(401).json({ error: 'Not authenticated' })
+      return
+    }
+
+    const count = await countsService.updateCount(id, data, userId)
 
     res.json(count)
   } catch (error) {
@@ -307,7 +314,13 @@ export const updateCountDetail = async (req: AuthRequest, res: Response): Promis
       return
     }
 
-    const detail = await countsService.updateCountDetail(id, data)
+    const userId = req.user?.id
+    if (!userId) {
+      res.status(401).json({ error: 'Not authenticated' })
+      return
+    }
+
+    const detail = await countsService.updateCountDetail(id, data, userId)
 
     res.json(detail)
   } catch (error) {
@@ -320,7 +333,7 @@ export const updateCountDetail = async (req: AuthRequest, res: Response): Promis
  * Obtiene estadísticas del dashboard
  * GET /api/counts/stats/dashboard
  */
-export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getDashboardStats = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const stats = await countsService.getDashboardStats()
 
@@ -335,7 +348,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response): Promis
  * Lista diferencias de conteos
  * GET /api/counts/differences
  */
-export const listDifferences = async (req: AuthRequest, res: Response): Promise<void> => {
+export const listDifferences = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const diffs = await countsService.listDifferences()
     res.json(diffs)
@@ -358,7 +371,13 @@ export const deleteCount = async (req: AuthRequest, res: Response): Promise<void
       return
     }
 
-    await countsService.deleteCount(id)
+    const userId = req.user?.id
+    if (!userId) {
+      res.status(401).json({ error: 'Not authenticated' })
+      return
+    }
+
+    await countsService.deleteCount(id, userId)
 
     res.json({ message: 'Count deleted successfully' })
   } catch (error) {

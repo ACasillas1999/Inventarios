@@ -9,6 +9,7 @@ export interface User {
   name: string
   role_id: number
   status: 'active' | 'suspended' | 'inactive'
+  phone_number?: string | null
   created_at: Date
   updated_at: Date
   last_login: Date | null
@@ -22,10 +23,12 @@ export interface UserResponse {
   role_name?: string
   permissions?: string[]
   status: string
+  phone_number?: string | null
   created_at: Date
   updated_at: Date
   last_login: Date | null
   branches?: Branch[]
+  subscriptions?: Array<{ event_key: string, branch_id: number | null }>
 }
 
 export interface Role {
@@ -82,6 +85,9 @@ export interface Count {
   tolerance_percentage: number
   created_at: string
   updated_at: string
+  responsible_user_name?: string
+  assigned_at?: string | null
+  last_reassigned_at?: string | null
 }
 
 export interface CountDetail {
@@ -185,6 +191,7 @@ export interface UpdateCountRequest {
   started_at?: string
   finished_at?: string
   closed_at?: string
+  responsible_user_id?: number
 }
 
 export interface CreateCountDetailRequest {

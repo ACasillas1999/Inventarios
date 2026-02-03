@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
-import { authMiddleware } from '../middlewares/auth'
+import { authMiddleware, requirePermission } from '../middlewares/auth'
 import { ConnectionManager } from '../connections/ConnectionManager'
+import { branchesService } from '../services/BranchesService'
 import { logger } from '../utils/logger'
 
 const router = Router()
@@ -12,15 +13,72 @@ router.use(authMiddleware)
  * Lista todas las sucursales con su estado de conexión
  * GET /api/branches
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   try {
     const connectionManager = ConnectionManager.getInstance()
     const statuses = connectionManager.getBranchesStatus()
-
-    res.json(statuses)
+    return res.json(statuses)
   } catch (error) {
     logger.error('Get branches error:', error)
-    res.status(500).json({ error: 'Failed to get branches' })
+    return res.status(500).json({ error: 'Failed to get branches' })
+  }
+})
+
+/**
+ * Obtiene el detalle de una sucursal (incluye credenciales para admin)
+ * GET /api/branches/list/full
+ */
+router.get('/list/full', requirePermission('all'), async (_req: Request, res: Response) => {
+  try {
+    const branches = await branchesService.getAllFromDb()
+    return res.json(branches)
+  } catch (error) {
+    logger.error('Get full branches list error:', error)
+    return res.status(500).json({ error: 'Failed to get branches full list' })
+  }
+})
+
+/**
+ * Crea una nueva sucursal
+ * POST /api/branches
+ */
+router.post('/', requirePermission('all'), async (req: Request, res: Response) => {
+  try {
+    const newId = await branchesService.create(req.body)
+    return res.status(201).json({ id: newId, message: 'Sucursal creada y conectada correctamente' })
+  } catch (error: any) {
+    logger.error('Create branch error:', error)
+    return res.status(500).json({ error: error.message || 'Failed to create branch' })
+  }
+})
+
+/**
+ * Actualiza una sucursal
+ * PUT /api/branches/:id
+ */
+router.put('/:id', requirePermission('all'), async (req: Request, res: Response) => {
+  try {
+    const branchId = parseInt(req.params.id)
+    await branchesService.update(branchId, req.body)
+    return res.json({ message: 'Sucursal actualizada y reconectada correctamente' })
+  } catch (error: any) {
+    logger.error('Update branch error:', error)
+    return res.status(500).json({ error: error.message || 'Failed to update branch' })
+  }
+})
+
+/**
+ * Elimina una sucursal
+ * DELETE /api/branches/:id
+ */
+router.delete('/:id', requirePermission('all'), async (req: Request, res: Response) => {
+  try {
+    const branchId = parseInt(req.params.id)
+    await branchesService.delete(branchId)
+    return res.json({ message: 'Sucursal eliminada correctamente' })
+  } catch (error: any) {
+    logger.error('Delete branch error:', error)
+    return res.status(500).json({ error: error.message || 'Failed to delete branch' })
   }
 })
 
@@ -33,20 +91,19 @@ router.get('/:id/health', async (req: Request, res: Response) => {
     const branchId = parseInt(req.params.id)
 
     if (isNaN(branchId)) {
-      res.status(400).json({ error: 'Invalid branch ID' })
-      return
+      return res.status(400).json({ error: 'Invalid branch ID' })
     }
 
     const connectionManager = ConnectionManager.getInstance()
     const isHealthy = await connectionManager.checkBranchHealth(branchId)
 
-    res.json({
+    return res.json({
       branch_id: branchId,
       healthy: isHealthy
     })
   } catch (error) {
     logger.error('Check branch health error:', error)
-    res.status(500).json({ error: 'Failed to check branch health' })
+    return res.status(500).json({ error: 'Failed to check branch health' })
   }
 })
 
@@ -59,8 +116,7 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
     const branchId = parseInt(req.params.id)
 
     if (isNaN(branchId)) {
-      res.status(400).json({ error: 'Invalid branch ID' })
-      return
+      return res.status(400).json({ error: 'Invalid branch ID' })
     }
 
     const connectionManager = ConnectionManager.getInstance()
@@ -71,11 +127,8 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
 
     if (currentConfig) {
       logger.info(`DEBUG: Connecting to Branch ${branchId} at HOST: ${currentConfig.host}, DB: ${currentConfig.database}`)
-    } else {
-      logger.warn(`DEBUG: Could not find config for Branch ${branchId}`)
     }
 
-    // Consulta modificada para debug: traer todo y ver el estado Habilitado
     const query = `
       SELECT 
         Almacen as id,
@@ -97,13 +150,10 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
       []
     )
 
-    logger.info(`DEBUG: Found ${warehouses.length} warehouses for Branch ${branchId}`)
-
-    // Filtrar en memoria por ahora para asegurar lo que enviamos, pero loguear antes
     const enabled = warehouses.filter(w => w.habilitado === 1)
 
-    res.json({
-      warehouses: enabled, // Enviamos solo habilitados como pide el usuario
+    return res.json({
+      warehouses: enabled,
       debug_info: {
         host: currentConfig?.host,
         database: currentConfig?.database,
@@ -114,10 +164,9 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Get warehouses error:', error)
     if (error?.code === 'ER_NO_SUCH_TABLE') {
-      res.status(404).json({ error: 'Warehouses table not found in branch database' })
-      return
+      return res.status(404).json({ error: 'Warehouses table not found in branch database' })
     }
-    res.status(500).json({ error: 'Failed to get warehouses' })
+    return res.status(500).json({ error: 'Failed to get warehouses' })
   }
 })
 
@@ -125,7 +174,7 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
  * Verifica el estado de salud de todas las sucursales
  * GET /api/branches/health/all
  */
-router.get('/health/all', async (req: Request, res: Response) => {
+router.get('/health/all', async (_req: Request, res: Response) => {
   try {
     const connectionManager = ConnectionManager.getInstance()
     const healthStatus = await connectionManager.checkAllBranchesHealth()
@@ -135,10 +184,10 @@ router.get('/health/all', async (req: Request, res: Response) => {
       healthy: isHealthy
     }))
 
-    res.json(results)
+    return res.json(results)
   } catch (error) {
     logger.error('Check all branches health error:', error)
-    res.status(500).json({ error: 'Failed to check all branches health' })
+    return res.status(500).json({ error: 'Failed to check all branches health' })
   }
 })
 

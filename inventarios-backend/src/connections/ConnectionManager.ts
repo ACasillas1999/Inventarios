@@ -19,7 +19,7 @@ export class ConnectionManager {
   private branchPools: Map<number, BranchPool> = new Map()
   private healthCheckInterval: NodeJS.Timeout | null = null
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): ConnectionManager {
     if (!ConnectionManager.instance) {
@@ -48,9 +48,14 @@ export class ConnectionManager {
   }
 
   /**
-   * Agrega una nueva conexión de sucursal
+   * Agrega una nueva conexión de sucursal o actualiza una existente
    */
   public async addBranch(config: BranchDbConfig): Promise<void> {
+    // Si ya existe un pool, cerrarlo antes de crear uno nuevo
+    if (this.branchPools.has(config.id)) {
+      await this.removeBranch(config.id)
+    }
+
     try {
       const poolConfig = {
         host: config.host,
@@ -64,7 +69,6 @@ export class ConnectionManager {
         enableKeepAlive: true,
         keepAliveInitialDelay: 0,
         charset: 'utf8mb4',
-        // Mantener timezone local para que fechas (si se consultan) no queden desfasadas
         timezone: 'local'
       }
 
@@ -107,6 +111,22 @@ export class ConnectionManager {
       })
 
       logger.error(`Branch ${config.code} connection failed: ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Elimina una conexión de sucursal y cierra su pool
+   */
+  public async removeBranch(branchId: number): Promise<void> {
+    const branchPool = this.branchPools.get(branchId)
+    if (branchPool) {
+      try {
+        await branchPool.pool.end()
+        logger.info(`Closed connection pool for branch ${branchPool.config.code}`)
+      } catch (error) {
+        logger.error(`Error closing pool for branch ${branchPool.config.code}:`, error)
+      }
+      this.branchPools.delete(branchId)
     }
   }
 

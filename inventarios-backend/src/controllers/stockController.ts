@@ -188,8 +188,12 @@ export const searchItems = async (req: AuthRequest, res: Response): Promise<void
     const search = req.query.search as string | undefined
     const linea = req.query.linea as string | undefined
     const almacen = parseInt(req.query.almacen as string) || 1
-    const limit = parseInt(req.query.limit as string) || 50
-    const offset = parseInt(req.query.offset as string) || 0
+    const limitParam = req.query.limit as string | undefined
+    const offsetParam = req.query.offset as string | undefined
+    const parsedLimit = limitParam !== undefined ? parseInt(limitParam) : NaN
+    const parsedOffset = offsetParam !== undefined ? parseInt(offsetParam) : NaN
+    const limit = Number.isNaN(parsedLimit) ? 50 : Math.max(parsedLimit, 0)
+    const offset = Number.isNaN(parsedOffset) ? 0 : Math.max(parsedOffset, 0)
 
     if (isNaN(branchId)) {
       res.status(400).json({ error: 'Invalid branch ID' })

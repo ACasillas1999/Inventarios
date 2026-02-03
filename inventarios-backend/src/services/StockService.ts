@@ -278,8 +278,11 @@ export class StockService {
   ): Promise<ItemFromBranch[]> {
     try {
       // Generar clave de caché incluyendo el almacén
-      const cacheKey = `v2_${search || 'all'}_${linea || 'all'}_${almacen}_${limit}_${offset}`
-      const cachedItems = this.cacheService.getBranchItems<ItemFromBranch>(branchId, cacheKey)
+      const shouldLimit = Number.isFinite(limit) && limit > 0
+      const cacheKey = `v2_${search || 'all'}_${linea || 'all'}_${almacen}_${shouldLimit ? limit : 'all'}_${shouldLimit ? offset : 0}`
+      const cachedItems = shouldLimit
+        ? this.cacheService.getBranchItems<ItemFromBranch>(branchId, cacheKey)
+        : undefined
 
       if (cachedItems) {
         return cachedItems
@@ -318,7 +321,10 @@ export class StockService {
         params.push(linea)
       }
 
-      query += ` ORDER BY Clave_Articulo LIMIT ${parseInt(String(limit))} OFFSET ${parseInt(String(offset))}`
+      query += ` ORDER BY Clave_Articulo`
+      if (shouldLimit) {
+        query += ` LIMIT ${parseInt(String(limit))} OFFSET ${parseInt(String(offset))}`
+      }
 
       const articles = await this.connectionManager.executeQuery<any>(branchId, query, params)
 
@@ -408,7 +414,9 @@ export class StockService {
       })
 
       // Guardar en caché
-      this.cacheService.setBranchItems(branchId, results, cacheKey)
+      if (shouldLimit) {
+        this.cacheService.setBranchItems(branchId, results, cacheKey)
+      }
 
       return results
     } catch (error: any) {
