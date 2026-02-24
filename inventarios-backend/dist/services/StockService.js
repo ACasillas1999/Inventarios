@@ -34,14 +34,16 @@ class StockService {
     /**
      * Consulta la existencia directamente de la base de datos
      * Adaptado al esquema real: Tabla articuloalm con columnas Clave_Articulo y Existencia_Fisica
+     * IMPORTANTE: Almacen = 1 representa la sucursal principal; otros números son bodegas
      */
     async queryStockFromDatabase(branchId, itemCode) {
         try {
             // Consulta adaptada al esquema real de la base de datos
+            // Filtrar por Almacen = 1 (sucursal principal, no bodegas)
             const query = `
         SELECT Existencia_Fisica as stock
         FROM articuloalm
-        WHERE Clave_Articulo = ?
+        WHERE Clave_Articulo = ? AND Almacen = 1
         LIMIT 1
       `;
             const results = await this.connectionManager.executeQuery(branchId, query, [itemCode]);
@@ -90,11 +92,12 @@ class StockService {
         // Consultar los que no están en caché
         try {
             // Consulta adaptada al esquema real
+            // Filtrar por Almacen = 1 (sucursal principal, no bodegas)
             const placeholders = itemsToQuery.map(() => '?').join(',');
             const query = `
         SELECT Clave_Articulo as item_code, Existencia_Fisica as stock
         FROM articuloalm
-        WHERE Clave_Articulo IN (${placeholders})
+        WHERE Clave_Articulo IN (${placeholders}) AND Almacen = 1
       `;
             const results = await this.connectionManager.executeQuery(branchId, query, itemsToQuery);
             // Procesar resultados y guardar en caché
@@ -164,11 +167,13 @@ class StockService {
                 return cachedItem;
             }
             // Consulta adaptada al esquema real (catálogo en articulo + existencia en articuloalm)
+            // IMPORTANTE: Linea se extrae de los primeros 5 caracteres de Clave_Articulo
+            // Filtrar por Almacen = 1 (sucursal principal, no bodegas)
             const query = `
         SELECT
           a.Clave_Articulo as codigo,
           a.Descripcion as descripcion,
-          a.Linea as linea,
+          LEFT(a.Clave_Articulo, 5) as linea,
           a.Unidad_Medida as unidad,
           alm.Almacen as almacen,
           IFNULL(alm.Existencia_Fisica, 0) as existencia,
@@ -196,7 +201,7 @@ class StockService {
           COALESCE(alm.Fecha_Compra_Ant, a.Fecha_Compra_Ant) as fecha_compra_ant,
           COALESCE(alm.PendientedeEntrega, 0) as pendiente_entrega
         FROM articulo a
-        LEFT JOIN articuloalm alm ON alm.Clave_Articulo = a.Clave_Articulo
+        LEFT JOIN articuloalm alm ON alm.Clave_Articulo = a.Clave_Articulo AND alm.Almacen = 1
         WHERE a.Clave_Articulo = ?
         LIMIT 1
       `;
@@ -227,21 +232,25 @@ class StockService {
     /**
      * Busca artículos en una sucursal con filtros
      */
-    async searchItems(branchId, search, linea, limit = 50, offset = 0) {
+    async searchItems(branchId, search, linea, limit = 50, offset = 0, almacen = 1) {
         try {
-            // Generar clave de caché
-            const cacheKey = `v2_${search || 'all'}_${linea || 'all'}_${limit}_${offset}`;
-            const cachedItems = this.cacheService.getBranchItems(branchId, cacheKey);
+            // Generar clave de caché incluyendo el almacén
+            const shouldLimit = Number.isFinite(limit) && limit > 0;
+            const cacheKey = `v2_${search || 'all'}_${linea || 'all'}_${almacen}_${shouldLimit ? limit : 'all'}_${shouldLimit ? offset : 0}`;
+            const cachedItems = shouldLimit
+                ? this.cacheService.getBranchItems(branchId, cacheKey)
+                : undefined;
             if (cachedItems) {
                 return cachedItems;
             }
             // Estrategia optimizada sin JOIN: primero obtener artículos, luego buscar existencias
             // Esto es mucho más rápido cuando articuloalm no tiene índice en Clave_Articulo
+            // IMPORTANTE: Linea se extrae de los primeros 5 caracteres de Clave_Articulo
             let query = `
         SELECT
           Clave_Articulo as codigo,
           Descripcion as descripcion,
-          Linea as linea,
+          LEFT(Clave_Articulo, 5) as linea,
           Unidad_Medida as unidad,
           Inventario_Minimo as inventario_minimo,
           Inventario_Maximo as inventario_maximo,
@@ -259,41 +268,44 @@ class StockService {
                 params.push(`%${search}%`, `%${search}%`);
             }
             if (linea === '__EMPTY__') {
-                query += ` AND (Linea IS NULL OR Linea = '')`;
+                query += ` AND (LEFT(Clave_Articulo, 5) IS NULL OR LEFT(Clave_Articulo, 5) = '')`;
             }
             else if (linea) {
-                query += ` AND Linea = ?`;
+                query += ` AND LEFT(Clave_Articulo, 5) = ?`;
                 params.push(linea);
             }
-            query += ` ORDER BY Clave_Articulo LIMIT ${parseInt(String(limit))} OFFSET ${parseInt(String(offset))}`;
+            query += ` ORDER BY Clave_Articulo`;
+            if (shouldLimit) {
+                query += ` LIMIT ${parseInt(String(limit))} OFFSET ${parseInt(String(offset))}`;
+            }
             const articles = await this.connectionManager.executeQuery(branchId, query, params);
             const itemCodes = articles.map((a) => a.codigo).filter(Boolean);
             const stockByCode = new Map();
             if (itemCodes.length > 0) {
                 try {
                     const placeholders = itemCodes.map(() => '?').join(',');
+                    // Filtrar por el almacén especificado (por defecto 1 = sucursal principal)
                     const stockQuery = `
             SELECT
               Clave_Articulo as codigo,
-              MIN(Almacen) as almacen,
-              SUM(Existencia_Fisica) as existencia_fisica,
-              SUM(Existencia_Teorica) as existencia_teorica,
-              MAX(Inventario_Minimo) as inventario_minimo,
-              MAX(Inventario_Maximo) as inventario_maximo,
-              MAX(Punto_Reorden) as punto_reorden,
-              MAX(Rack) as rack,
-              MAX(Costo_Promedio) as costo_promedio,
-              MAX(Costo_Promedio_Ant) as costo_promedio_ant,
-              MAX(Costo_Ult_Compra) as costo_ultima_compra,
-              MAX(Fecha_Ult_Compra) as fecha_ult_compra,
-              MAX(Costo_Compra_Ant) as costo_compra_ant,
-              MAX(Fecha_Compra_Ant) as fecha_compra_ant,
-              MAX(PendientedeEntrega) as pendiente_entrega
+              Almacen as almacen,
+              Existencia_Fisica as existencia_fisica,
+              Existencia_Teorica as existencia_teorica,
+              Inventario_Minimo as inventario_minimo,
+              Inventario_Maximo as inventario_maximo,
+              Punto_Reorden as punto_reorden,
+              Rack as rack,
+              Costo_Promedio as costo_promedio,
+              Costo_Promedio_Ant as costo_promedio_ant,
+              Costo_Ult_Compra as costo_ultima_compra,
+              Fecha_Ult_Compra as fecha_ult_compra,
+              Costo_Compra_Ant as costo_compra_ant,
+              Fecha_Compra_Ant as fecha_compra_ant,
+              PendientedeEntrega as pendiente_entrega
             FROM articuloalm
-            WHERE Clave_Articulo IN (${placeholders})
-            GROUP BY Clave_Articulo
+            WHERE Clave_Articulo IN (${placeholders}) AND Almacen = ?
           `;
-                    const stockRows = await this.connectionManager.executeQuery(branchId, stockQuery, itemCodes);
+                    const stockRows = await this.connectionManager.executeQuery(branchId, stockQuery, [...itemCodes, almacen]);
                     for (const row of stockRows) {
                         stockByCode.set(row.codigo, row);
                     }
@@ -342,7 +354,9 @@ class StockService {
                 };
             });
             // Guardar en caché
-            this.cacheService.setBranchItems(branchId, results, cacheKey);
+            if (shouldLimit) {
+                this.cacheService.setBranchItems(branchId, results, cacheKey);
+            }
             return results;
         }
         catch (error) {
@@ -386,7 +400,42 @@ class StockService {
         logger_1.logger.info(`Sync completed for branch ${branchId}`);
     }
     /**
+     * Obtiene los almacenes disponibles en una sucursal
+     */
+    async getWarehouses(branchId) {
+        try {
+            const query = `
+        SELECT DISTINCT 
+          aa.Almacen as almacen,
+          alm.Nombre as nombre
+        FROM articuloalm aa
+        LEFT JOIN almacenes alm ON aa.Almacen = alm.Almacen
+        WHERE aa.Almacen IS NOT NULL
+        ORDER BY aa.Almacen ASC
+      `;
+            const results = await this.connectionManager.executeQuery(branchId, query, []);
+            // Devolver con nombres desde la BD o fallback descriptivo
+            return results.map((row) => ({
+                almacen: row.almacen,
+                nombre: row.nombre || (row.almacen === 1 ? 'Sucursal principal' : `Almacén ${row.almacen}`)
+            }));
+        }
+        catch (error) {
+            if (error.code === 'ER_NO_SUCH_TABLE') {
+                logger_1.logger.warn(`Table articuloalm does not exist in branch ${branchId}`);
+                return [];
+            }
+            if (error.message?.includes('pool not available') || error.code === 'ECONNREFUSED') {
+                logger_1.logger.warn(`Branch ${branchId} is not available`);
+                return [];
+            }
+            logger_1.logger.error(`Error getting warehouses in branch ${branchId}:`, error);
+            throw error;
+        }
+    }
+    /**
      * Obtiene las líneas (familias) distintas del catálogo de una sucursal
+     * IMPORTANTE: Las líneas se obtienen de los primeros 5 caracteres de Clave_Articulo
      */
     async getLines(branchId) {
         try {
@@ -396,16 +445,18 @@ class StockService {
             if (cachedLines) {
                 return cachedLines;
             }
-            // Query optimizada con LIMIT para evitar escaneo completo de tabla grande
+            // Query optimizada: extrae los primeros 5 caracteres de Clave_Articulo como línea
             const query = `
-        SELECT DISTINCT Linea as linea
+        SELECT DISTINCT LEFT(Clave_Articulo, 5) as linea
         FROM articulo
-        WHERE Linea IS NOT NULL AND Linea <> ''
+        WHERE Clave_Articulo IS NOT NULL
+          AND Clave_Articulo <> ''
+          AND LENGTH(Clave_Articulo) >= 5
         ORDER BY linea ASC
         LIMIT 1000
       `;
             const results = await this.connectionManager.executeQuery(branchId, query, []);
-            const lines = results.map((row) => row.linea);
+            const lines = results.map((row) => row.linea).filter(Boolean);
             // Guardar en caché por 1 hora (las líneas no cambian frecuentemente)
             this.cacheService.setBranchItems(branchId, lines, cacheKey);
             return lines;
@@ -425,8 +476,82 @@ class StockService {
         }
     }
     /**
+     * Obtiene las existencias de un artículo en TODOS los almacenes de una sucursal
+     * Incluye información del artículo y detalles de cada almacén
+     */
+    async getItemWarehousesStock(branchId, itemCode) {
+        try {
+            // Primero obtener información del artículo
+            const itemQuery = `
+        SELECT 
+          Clave_Articulo as codigo,
+          Descripcion as descripcion,
+          LEFT(Clave_Articulo, 5) as linea,
+          Unidad_Medida as unidad
+        FROM articulo
+        WHERE Clave_Articulo = ?
+        LIMIT 1
+      `;
+            const itemResults = await this.connectionManager.executeQuery(branchId, itemQuery, [itemCode]);
+            if (itemResults.length === 0) {
+                logger_1.logger.warn(`Item ${itemCode} not found in branch ${branchId}`);
+                return null;
+            }
+            const itemInfo = itemResults[0];
+            // Luego obtener existencias en todos los almacenes
+            const warehousesQuery = `
+        SELECT 
+          aa.Almacen as warehouse_id,
+          alm.Nombre as warehouse_name,
+          aa.Existencia_Fisica as stock,
+          aa.Rack as rack,
+          aa.Costo_Promedio as avg_cost,
+          aa.Inventario_Minimo as min_stock,
+          aa.Inventario_Maximo as max_stock,
+          aa.Punto_Reorden as reorder_point
+        FROM articuloalm aa
+        INNER JOIN almacenes alm ON aa.Almacen = alm.Almacen
+        WHERE aa.Clave_Articulo = ?
+        ORDER BY aa.Almacen ASC
+      `;
+            const warehousesResults = await this.connectionManager.executeQuery(branchId, warehousesQuery, [itemCode]);
+            // Calcular stock total
+            const totalStock = warehousesResults.reduce((sum, wh) => sum + (wh.stock || 0), 0);
+            return {
+                item_code: itemInfo.codigo,
+                item_description: itemInfo.descripcion,
+                item_line: itemInfo.linea,
+                item_unit: itemInfo.unidad,
+                total_stock: totalStock,
+                warehouses: warehousesResults.map((wh) => ({
+                    warehouse_id: wh.warehouse_id,
+                    warehouse_name: wh.warehouse_name,
+                    stock: wh.stock || 0,
+                    rack: wh.rack,
+                    avg_cost: wh.avg_cost || 0,
+                    min_stock: wh.min_stock,
+                    max_stock: wh.max_stock,
+                    reorder_point: wh.reorder_point
+                }))
+            };
+        }
+        catch (error) {
+            if (error.code === 'ER_NO_SUCH_TABLE') {
+                logger_1.logger.warn(`Table articulo/articuloalm/almacenes does not exist in branch ${branchId}`);
+                return null;
+            }
+            if (error.message?.includes('pool not available') || error.code === 'ECONNREFUSED') {
+                logger_1.logger.warn(`Branch ${branchId} is not available`);
+                return null;
+            }
+            logger_1.logger.error(`Error getting item warehouses stock for ${itemCode} in branch ${branchId}:`, error);
+            throw error;
+        }
+    }
+    /**
      * Obtiene los códigos de artículos para una sucursal (opcionalmente filtrado por línea)
      * Útil para "seleccionar todos" sin paginación.
+     * IMPORTANTE: Las líneas se filtran por los primeros 5 caracteres de Clave_Articulo
      */
     async getItemCodes(branchId, linea) {
         try {
@@ -437,10 +562,10 @@ class StockService {
       `;
             const params = [];
             if (linea === '__EMPTY__') {
-                query += ` AND (Linea IS NULL OR Linea = '')`;
+                query += ` AND (LEFT(Clave_Articulo, 5) IS NULL OR LEFT(Clave_Articulo, 5) = '')`;
             }
             else if (linea) {
-                query += ` AND Linea = ?`;
+                query += ` AND LEFT(Clave_Articulo, 5) = ?`;
                 params.push(linea);
             }
             query += ` ORDER BY Clave_Articulo ASC`;

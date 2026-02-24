@@ -131,9 +131,25 @@ export const getCountByFolio = async (req: AuthRequest, res: Response): Promise<
  */
 export const listCounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const allowedStatuses = ['pendiente', 'contando', 'contado', 'cerrado', 'cancelado']
+    const rawStatus = req.query.status
+    const statusValues =
+      rawStatus === undefined
+        ? []
+        : Array.isArray(rawStatus)
+          ? rawStatus.flatMap((value) => String(value).split(',').map((entry) => entry.trim()).filter(Boolean))
+          : String(rawStatus).split(',').map((entry) => entry.trim()).filter(Boolean)
+
+    const invalidStatus = statusValues.find((value) => !allowedStatuses.includes(value))
+    if (invalidStatus) {
+      res.status(400).json({ error: 'Invalid status' })
+      return
+    }
+
     const filters = {
       branch_id: req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined,
-      status: req.query.status as string | undefined,
+      status: statusValues.length === 1 ? statusValues[0] : undefined,
+      statuses: statusValues.length > 1 ? statusValues : undefined,
       type: req.query.type as string | undefined,
       classification: req.query.classification as string | undefined,
       responsible_user_id: req.query.responsible_user_id

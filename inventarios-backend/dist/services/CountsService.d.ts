@@ -8,10 +8,19 @@ export declare class CountsService {
     private readonly MAX_ITEMS_PER_COUNT;
     private readonly SEED_CHUNK_SIZE;
     private readonly MAX_REQUESTS_PER_BATCH;
+    private readonly HISTORY_CHUNK_SIZE;
+    private getCountedItemCodesInRange;
+    getItemsHistory(branchId: number, itemCodes: string[], from: string, to: string, almacen?: number): Promise<Array<{
+        item_code: string;
+        last_counted_at: string;
+        count_id: number;
+        folio: string;
+        almacen: number;
+    }>>;
     /**
-     * Genera un folio único para el conteo
+     * Genera múltiples folios únicos secuenciales basados en la configuración
      */
-    private generateFolio;
+    private generateMultipleFolios;
     /**
      * Genera folios únicos para solicitudes (requests)
      */
@@ -25,11 +34,16 @@ export declare class CountsService {
         total_differences: number;
     }>;
     /**
-     * Crea un nuevo conteo
+     * Valida que no existan conteos activos con los mismos códigos de artículo
      */
-    createCount(userId: number, data: CreateCountRequest): Promise<Count>;
+    private validateNoDuplicateActiveCounts;
+    /**
+     * Crea múltiples conteos - uno por cada artículo en el almacén seleccionado
+     */
+    createCount(userId: number, data: CreateCountRequest): Promise<Count[]>;
     private normalizeItemCodes;
     private seedCountDetailsFromItems;
+    private seedCountDetailsWithValues;
     /**
      * Obtiene un conteo por ID
      */
@@ -44,10 +58,15 @@ export declare class CountsService {
     listCounts(filters: {
         branch_id?: number;
         status?: string;
+        statuses?: string[];
         type?: string;
+        classification?: string;
         responsible_user_id?: number;
         date_from?: string;
         date_to?: string;
+        scheduled_from?: string;
+        scheduled_to?: string;
+        search?: string;
         limit?: number;
         offset?: number;
     }): Promise<{
@@ -55,9 +74,22 @@ export declare class CountsService {
         total: number;
     }>;
     /**
+     * Refresca el stock de sistema desde el ERP para todos los artículos en un conteo
+     */
+    private refreshStocksForCount;
+    /**
      * Actualiza un conteo
      */
-    updateCount(id: number, data: UpdateCountRequest): Promise<Count>;
+    updateCount(id: number, data: UpdateCountRequest, userId: number): Promise<Count>;
+    /**
+     * Helper para notificar asignación/reasignación
+     */
+    private notifyAssignment;
+    /**
+     * Verifica si hay artículos de líneas especiales con diferencias significativas
+     * y envía notificaciones por WhatsApp
+     */
+    private checkSpecialLinesAndNotify;
     /**
      * Agrega un detalle al conteo
      */
@@ -73,20 +105,16 @@ export declare class CountsService {
     /**
      * Actualiza un detalle de conteo
      */
-    updateCountDetail(id: number, data: UpdateCountDetailRequest): Promise<CountDetail>;
+    updateCountDetail(id: number, data: UpdateCountDetailRequest, userId: number): Promise<CountDetail>;
     /**
      * Obtiene estadísticas del dashboard
+     * Devuelve contadores globales, resumen por sucursal y conteos recientes
      */
-    getDashboardStats(): Promise<{
-        open_counts: number;
-        scheduled_counts: number;
-        pending_requests: number;
-        closed_counts: number;
-    }>;
+    getDashboardStats(): Promise<any>;
     /**
      * Elimina un conteo (soft delete cambiando estado)
      */
-    deleteCount(id: number): Promise<void>;
+    deleteCount(id: number, userId: number): Promise<void>;
     /**
      * Lista diferencias registradas en detalles de conteo
      */

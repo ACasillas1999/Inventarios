@@ -65,6 +65,7 @@ export class AuditService {
         branch_id?: number
         user_id?: number
         entity_type?: string
+        entity_id?: number
         date_from?: string
         date_to?: string
         limit?: number
@@ -88,6 +89,11 @@ export class AuditService {
             params.push(filters.entity_type)
         }
 
+        if (filters.entity_id) {
+            query += ' AND a.entity_id = ?'
+            params.push(filters.entity_id)
+        }
+
         if (filters.date_from) {
             query += ' AND a.created_at >= ?'
             params.push(filters.date_from)
@@ -108,10 +114,35 @@ export class AuditService {
         const [rows] = await this.pool.execute<AuditLogEntry[] & RowDataPacket[]>(query, params)
 
         // Obtener total para paginación
-        const [totalRows] = await this.pool.execute<any[]>(
-            'SELECT COUNT(*) as total FROM audit_log WHERE 1=1',
-            []
-        )
+        let totalQuery = 'SELECT COUNT(*) as total FROM audit_log a WHERE 1=1'
+        const totalParams: any[] = []
+
+        if (filters.user_id) {
+            totalQuery += ' AND a.user_id = ?'
+            totalParams.push(filters.user_id)
+        }
+
+        if (filters.entity_type) {
+            totalQuery += ' AND a.entity_type = ?'
+            totalParams.push(filters.entity_type)
+        }
+
+        if (filters.entity_id) {
+            totalQuery += ' AND a.entity_id = ?'
+            totalParams.push(filters.entity_id)
+        }
+
+        if (filters.date_from) {
+            totalQuery += ' AND a.created_at >= ?'
+            totalParams.push(filters.date_from)
+        }
+
+        if (filters.date_to) {
+            totalQuery += ' AND a.created_at <= ?'
+            totalParams.push(filters.date_to)
+        }
+
+        const [totalRows] = await this.pool.execute<any[]>(totalQuery, totalParams)
 
         return {
             logs: rows,

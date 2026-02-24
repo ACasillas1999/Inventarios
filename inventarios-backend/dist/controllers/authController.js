@@ -20,7 +20,7 @@ const login = async (req, res) => {
         }
         const pool = (0, database_1.getLocalPool)();
         // Buscar usuario
-        const [users] = await pool.execute(`SELECT u.*, r.name as role_name
+        const [users] = await pool.execute(`SELECT u.*, r.name as role_name, r.permissions
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
        WHERE u.email = ? AND u.status = 'active'`, [email]);
@@ -56,6 +56,7 @@ const login = async (req, res) => {
             name: user.name,
             role_id: user.role_id,
             role_name: user.role_name,
+            permissions: typeof user.permissions === 'string' ? JSON.parse(user.permissions) : user.permissions,
             status: user.status,
             created_at: user.created_at,
             updated_at: user.updated_at,
@@ -85,7 +86,7 @@ const getProfile = async (req, res) => {
             return;
         }
         const pool = (0, database_1.getLocalPool)();
-        const [users] = await pool.execute(`SELECT u.*, r.name as role_name
+        const [users] = await pool.execute(`SELECT u.*, r.name as role_name, r.permissions
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
        WHERE u.id = ?`, [userId]);
@@ -105,6 +106,7 @@ const getProfile = async (req, res) => {
             name: user.name,
             role_id: user.role_id,
             role_name: user.role_name,
+            permissions: typeof user.permissions === 'string' ? JSON.parse(user.permissions) : user.permissions,
             status: user.status,
             created_at: user.created_at,
             updated_at: user.updated_at,

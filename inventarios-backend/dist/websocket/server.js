@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.emitToRole = exports.emitToUser = exports.emitToRoom = exports.emitRequestStatus = exports.emitCountProgress = exports.emitStockUpdate = exports.getWebSocketServer = exports.initializeWebSocket = void 0;
+exports.emitCountReassigned = exports.emitToRole = exports.emitToUser = exports.emitToRoom = exports.emitCountDetailAdded = exports.emitCountStatusChanged = exports.emitCountCreated = exports.emitRequestCreated = exports.emitRequestStatus = exports.emitCountProgress = exports.emitStockUpdate = exports.getWebSocketServer = exports.initializeWebSocket = void 0;
 const socket_io_1 = require("socket.io");
 const auth_1 = require("../middlewares/auth");
 const logger_1 = require("../utils/logger");
@@ -134,6 +134,73 @@ const emitRequestStatus = (requestId, folio, oldStatus, newStatus) => {
 };
 exports.emitRequestStatus = emitRequestStatus;
 /**
+ * Emite un evento cuando se crea una nueva solicitud
+ */
+const emitRequestCreated = (request) => {
+    if (!io)
+        return;
+    io.emit('request_created', {
+        type: 'request_created',
+        data: request,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Request created emitted: ${request.folio}`);
+};
+exports.emitRequestCreated = emitRequestCreated;
+/**
+ * Emite un evento cuando se crea un nuevo conteo
+ */
+const emitCountCreated = (count) => {
+    if (!io)
+        return;
+    io.emit('count_created', {
+        type: 'count_created',
+        data: count,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Count created emitted: ${count.folio}`);
+};
+exports.emitCountCreated = emitCountCreated;
+/**
+ * Emite un evento cuando cambia el estado de un conteo
+ */
+const emitCountStatusChanged = (countId, folio, oldStatus, newStatus) => {
+    if (!io)
+        return;
+    io.emit('count_status_changed', {
+        type: 'count_status_changed',
+        data: {
+            count_id: countId,
+            folio,
+            old_status: oldStatus,
+            new_status: newStatus
+        },
+        timestamp: new Date()
+    });
+    // También emitir a la sala específica del conteo
+    io.to(`count:${countId}`).emit('status_updated', {
+        count_id: countId,
+        status: newStatus,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Count status changed emitted for ${folio}: ${oldStatus} -> ${newStatus}`);
+};
+exports.emitCountStatusChanged = emitCountStatusChanged;
+/**
+ * Emite un evento cuando se agrega un detalle a un conteo
+ */
+const emitCountDetailAdded = (countId, detail) => {
+    if (!io)
+        return;
+    io.to(`count:${countId}`).emit('detail_added', {
+        count_id: countId,
+        detail,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Count detail added emitted for count ${countId}`);
+};
+exports.emitCountDetailAdded = emitCountDetailAdded;
+/**
  * Emite un evento personalizado a una sala específica
  */
 const emitToRoom = (room, event, data) => {
@@ -159,12 +226,45 @@ const emitToRole = (roleId, event, data) => {
     (0, exports.emitToRoom)(`role:${roleId}`, event, data);
 };
 exports.emitToRole = emitToRole;
+/**
+ * Emite un evento cuando se reasigna un conteo
+ */
+const emitCountReassigned = (countId, folio, oldResponsibleId, newResponsibleId) => {
+    if (!io)
+        return;
+    io.emit('count_reassigned', {
+        type: 'count_reassigned',
+        data: {
+            count_id: countId,
+            folio,
+            old_responsible_id: oldResponsibleId,
+            new_responsible_id: newResponsibleId
+        },
+        timestamp: new Date()
+    });
+    // También emitir a la sala específica del conteo
+    io.to(`count:${countId}`).emit('reassigned', {
+        count_id: countId,
+        responsible_id: newResponsibleId,
+        timestamp: new Date()
+    });
+    // Emitir a salas de usuario
+    io.to(`user:${oldResponsibleId}`).emit('count_unassigned', { count_id: countId, folio });
+    io.to(`user:${newResponsibleId}`).emit('count_assigned', { count_id: countId, folio });
+    logger_1.logger.debug(`Count reassigned emitted for ${folio}: ${oldResponsibleId} -> ${newResponsibleId}`);
+};
+exports.emitCountReassigned = emitCountReassigned;
 exports.default = {
     initializeWebSocket: exports.initializeWebSocket,
     getWebSocketServer: exports.getWebSocketServer,
     emitStockUpdate: exports.emitStockUpdate,
     emitCountProgress: exports.emitCountProgress,
     emitRequestStatus: exports.emitRequestStatus,
+    emitRequestCreated: exports.emitRequestCreated,
+    emitCountCreated: exports.emitCountCreated,
+    emitCountStatusChanged: exports.emitCountStatusChanged,
+    emitCountDetailAdded: exports.emitCountDetailAdded,
+    emitCountReassigned: exports.emitCountReassigned,
     emitToRoom: exports.emitToRoom,
     emitToUser: exports.emitToUser,
     emitToRole: exports.emitToRole

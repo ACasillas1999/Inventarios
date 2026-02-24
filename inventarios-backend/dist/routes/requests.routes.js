@@ -10,6 +10,6 @@ const router = (0, express_1.Router)();
 router.use(auth_1.authMiddleware);
 router.get('/', requestsController_1.default.listRequests);
 router.get('/:id', requestsController_1.default.getRequest);
-router.patch('/:id', requestsController_1.default.updateRequest);
+router.patch('/:id', (0, auth_1.requirePermission)('requests.update'), requestsController_1.default.updateRequest);
 exports.default = router;
 //# sourceMappingURL=requests.routes.js.map

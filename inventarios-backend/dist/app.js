@@ -21,6 +21,7 @@ const errorHandler_1 = require("./middlewares/errorHandler");
 const ConnectionManager_1 = require("./connections/ConnectionManager");
 const database_1 = require("./config/database");
 const server_1 = require("./websocket/server");
+const initSettings_1 = require("./utils/initSettings");
 // Importar rutas
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const stock_routes_1 = __importDefault(require("./routes/stock.routes"));
@@ -28,6 +29,12 @@ const counts_routes_1 = __importDefault(require("./routes/counts.routes"));
 const branches_routes_1 = __importDefault(require("./routes/branches.routes"));
 const users_routes_1 = __importDefault(require("./routes/users.routes"));
 const requests_routes_1 = __importDefault(require("./routes/requests.routes"));
+const roles_routes_1 = __importDefault(require("./routes/roles.routes"));
+const special_lines_routes_1 = __importDefault(require("./routes/special-lines.routes"));
+const reports_routes_1 = __importDefault(require("./routes/reports.routes"));
+const audit_routes_1 = __importDefault(require("./routes/audit.routes"));
+const settings_routes_1 = __importDefault(require("./routes/settings.routes"));
+const test_data_routes_1 = __importDefault(require("./routes/test-data.routes"));
 // Constantes
 const PORT = parseInt(process.env.PORT || '3000');
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -48,13 +55,13 @@ const createApp = () => {
     app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
     // Logger de requests en desarrollo
     if (NODE_ENV === 'development') {
-        app.use((req, res, next) => {
-            logger_1.logger.debug(`${req.method} ${req.url}`);
+        app.use((_req, _res, next) => {
+            logger_1.logger.debug(`${_req.method} ${_req.url}`);
             next();
         });
     }
     // Health check
-    app.get('/health', (req, res) => {
+    app.get('/health', (_req, res) => {
         const connectionManager = ConnectionManager_1.ConnectionManager.getInstance();
         const connectedBranches = connectionManager.getConnectedBranchesCount();
         const totalBranches = connectionManager.getAllBranchConfigs().length;
@@ -79,8 +86,14 @@ const createApp = () => {
     app.use('/api/branches', branches_routes_1.default);
     app.use('/api/users', users_routes_1.default);
     app.use('/api/requests', requests_routes_1.default);
+    app.use('/api/roles', roles_routes_1.default);
+    app.use('/api/special-lines', special_lines_routes_1.default);
+    app.use('/api/reports', reports_routes_1.default);
+    app.use('/api/audit', audit_routes_1.default);
+    app.use('/api/settings', settings_routes_1.default);
+    app.use('/api/test-data', test_data_routes_1.default);
     // Ruta raíz
-    app.get('/', (req, res) => {
+    app.get('/', (_req, res) => {
         res.json({
             name: 'Inventarios Backend API',
             version: '1.0.0',
@@ -114,6 +127,8 @@ const initializeDatabases = async () => {
             await connectionManager.initializeBranches(branchDatabases);
             logger_1.logger.info(`${connectionManager.getConnectedBranchesCount()} of ${branchDatabases.length} branch databases connected`);
         }
+        // Asegurar configuraciones base
+        await (0, initSettings_1.ensureBaseSettings)();
     }
     catch (error) {
         logger_1.logger.error('Failed to initialize databases:', error);

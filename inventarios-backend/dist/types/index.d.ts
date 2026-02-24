@@ -5,6 +5,7 @@ export interface User {
     name: string;
     role_id: number;
     status: 'active' | 'suspended' | 'inactive';
+    phone_number?: string | null;
     created_at: Date;
     updated_at: Date;
     last_login: Date | null;
@@ -15,11 +16,17 @@ export interface UserResponse {
     name: string;
     role_id: number;
     role_name?: string;
+    permissions?: string[];
     status: string;
+    phone_number?: string | null;
     created_at: Date;
     updated_at: Date;
     last_login: Date | null;
     branches?: Branch[];
+    subscriptions?: Array<{
+        event_key: string;
+        branch_id: number | null;
+    }>;
 }
 export interface Role {
     id: number;
@@ -57,26 +64,32 @@ export interface Count {
     id: number;
     folio: string;
     branch_id: number;
+    almacen: number;
     type: 'ciclico' | 'por_familia' | 'por_zona' | 'rango' | 'total';
+    classification: 'inventario' | 'ajuste';
     priority: 'baja' | 'media' | 'alta' | 'urgente';
-    status: 'pendiente' | 'en_proceso' | 'terminado' | 'cerrado';
+    status: 'pendiente' | 'contando' | 'contado' | 'cerrado' | 'cancelado';
     responsible_user_id: number;
     created_by_user_id: number;
-    scheduled_date: Date | null;
-    started_at: Date | null;
-    finished_at: Date | null;
-    closed_at: Date | null;
+    scheduled_date: string | null;
+    started_at: string | null;
+    finished_at: string | null;
+    closed_at: string | null;
     notes: string | null;
-    file_path: string | null;
     tolerance_percentage: number;
-    created_at: Date;
-    updated_at: Date;
+    created_at: string;
+    updated_at: string;
+    responsible_user_name?: string;
+    assigned_at?: string | null;
+    last_reassigned_at?: string | null;
 }
 export interface CountDetail {
     id: number;
     count_id: number;
     item_code: string;
     item_description: string | null;
+    warehouse_id: number;
+    warehouse_name: string | null;
     system_stock: number;
     counted_stock: number;
     difference: number;
@@ -138,24 +151,36 @@ export interface LoginResponse {
 }
 export interface CreateCountRequest {
     branch_id: number;
+    almacen?: number;
     type: 'ciclico' | 'por_familia' | 'por_zona' | 'rango' | 'total';
+    classification?: 'inventario' | 'ajuste';
     priority?: 'baja' | 'media' | 'alta' | 'urgente';
     responsible_user_id: number;
     scheduled_date?: string;
     notes?: string;
     tolerance_percentage?: number;
+    exclude_already_counted_month?: boolean;
+    month_from?: string;
+    month_to?: string;
     items?: string[];
+    items_data?: Array<{
+        item_code: string;
+        count: number;
+    }>;
 }
 export interface UpdateCountRequest {
-    status?: 'pendiente' | 'en_proceso' | 'terminado' | 'cerrado';
+    status?: 'pendiente' | 'contando' | 'contado' | 'cerrado' | 'cancelado';
     notes?: string;
     started_at?: string;
     finished_at?: string;
     closed_at?: string;
+    responsible_user_id?: number;
 }
 export interface CreateCountDetailRequest {
     item_code: string;
     item_description?: string;
+    warehouse_id: number;
+    warehouse_name?: string;
     system_stock: number;
     counted_stock: number;
     unit?: string;

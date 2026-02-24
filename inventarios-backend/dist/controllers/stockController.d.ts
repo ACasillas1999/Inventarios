@@ -29,7 +29,7 @@ export declare const compareStock: (req: AuthRequest, res: Response) => Promise<
 export declare const getItemInfo: (req: AuthRequest, res: Response) => Promise<void>;
 /**
  * Busca artículos en una sucursal
- * GET /api/stock/:branchId/items?search=xxx&linea=yyy&limit=50&offset=0
+ * GET /api/stock/:branchId/items?search=xxx&linea=yyy&almacen=1&limit=50&offset=0
  */
 export declare const searchItems: (req: AuthRequest, res: Response) => Promise<void>;
 /**
@@ -38,10 +38,20 @@ export declare const searchItems: (req: AuthRequest, res: Response) => Promise<v
  */
 export declare const invalidateCache: (req: AuthRequest, res: Response) => Promise<void>;
 /**
+ * Obtiene los almacenes disponibles en una sucursal
+ * GET /api/stock/:branchId/warehouses
+ */
+export declare const getWarehouses: (req: AuthRequest, res: Response) => Promise<void>;
+/**
  * Obtiene las líneas/familias disponibles en el catálogo de una sucursal
  * GET /api/stock/:branchId/lines
  */
 export declare const getLines: (req: AuthRequest, res: Response) => Promise<void>;
+/**
+ * Obtiene las existencias de un artículo en TODOS los almacenes de una sucursal
+ * GET /api/stock/:branchId/item/:itemCode/warehouses
+ */
+export declare const getItemWarehousesStock: (req: AuthRequest, res: Response) => Promise<void>;
 /**
  * Obtiene los códigos de artículos de una sucursal (opcionalmente filtrado por línea)
  * GET /api/stock/:branchId/item-codes?linea=xxx
@@ -55,8 +65,10 @@ declare const _default: {
     getItemInfo: (req: AuthRequest, res: Response) => Promise<void>;
     searchItems: (req: AuthRequest, res: Response) => Promise<void>;
     invalidateCache: (req: AuthRequest, res: Response) => Promise<void>;
+    getWarehouses: (req: AuthRequest, res: Response) => Promise<void>;
     getLines: (req: AuthRequest, res: Response) => Promise<void>;
     getItemCodes: (req: AuthRequest, res: Response) => Promise<void>;
+    getItemWarehousesStock: (req: AuthRequest, res: Response) => Promise<void>;
 };
 export default _default;
 //# sourceMappingURL=stockController.d.ts.map

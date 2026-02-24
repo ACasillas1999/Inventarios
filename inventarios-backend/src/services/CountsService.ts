@@ -967,6 +967,7 @@ export class CountsService {
   async listCounts(filters: {
     branch_id?: number
     status?: string
+    statuses?: string[]
     type?: string
     classification?: string
     responsible_user_id?: number
@@ -998,10 +999,18 @@ export class CountsService {
       params.push(filters.branch_id)
     }
 
-    if (filters.status) {
-      query += ' AND c.status = ?'
-      countQuery += ' AND c.status = ?'
-      params.push(filters.status)
+    const statusFilters =
+      Array.isArray(filters.statuses) && filters.statuses.length
+        ? filters.statuses
+        : filters.status
+          ? [filters.status]
+          : []
+
+    if (statusFilters.length) {
+      const placeholders = statusFilters.map(() => '?').join(', ')
+      query += ` AND c.status IN (${placeholders})`
+      countQuery += ` AND c.status IN (${placeholders})`
+      params.push(...statusFilters)
     }
 
     if (filters.type) {

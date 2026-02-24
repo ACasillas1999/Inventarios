@@ -39,9 +39,13 @@ class ConnectionManager {
         logger_1.logger.info('Branch connections initialized');
     }
     /**
-     * Agrega una nueva conexión de sucursal
+     * Agrega una nueva conexión de sucursal o actualiza una existente
      */
     async addBranch(config) {
+        // Si ya existe un pool, cerrarlo antes de crear uno nuevo
+        if (this.branchPools.has(config.id)) {
+            await this.removeBranch(config.id);
+        }
         try {
             const poolConfig = {
                 host: config.host,
@@ -55,7 +59,6 @@ class ConnectionManager {
                 enableKeepAlive: true,
                 keepAliveInitialDelay: 0,
                 charset: 'utf8mb4',
-                // Mantener timezone local para que fechas (si se consultan) no queden desfasadas
                 timezone: 'local'
             };
             const pool = promise_1.default.createPool(poolConfig);
@@ -92,6 +95,22 @@ class ConnectionManager {
                 errorMessage
             });
             logger_1.logger.error(`Branch ${config.code} connection failed: ${errorMessage}`);
+        }
+    }
+    /**
+     * Elimina una conexión de sucursal y cierra su pool
+     */
+    async removeBranch(branchId) {
+        const branchPool = this.branchPools.get(branchId);
+        if (branchPool) {
+            try {
+                await branchPool.pool.end();
+                logger_1.logger.info(`Closed connection pool for branch ${branchPool.config.code}`);
+            }
+            catch (error) {
+                logger_1.logger.error(`Error closing pool for branch ${branchPool.config.code}:`, error);
+            }
+            this.branchPools.delete(branchId);
         }
     }
     /**

@@ -3,6 +3,7 @@ export type RequestRow = {
     id: number;
     folio: string;
     count_id: number;
+    count_folio?: string;
     count_detail_id: number;
     branch_id: number;
     item_code: string;
@@ -15,6 +16,11 @@ export type RequestRow = {
     reviewed_at: string | null;
     resolution_notes: string | null;
     evidence_file: string | null;
+    warehouse_id?: number;
+    warehouse_name?: string;
+    count_classification?: 'inventario' | 'ajuste';
+    requested_by_name?: string | null;
+    reviewed_by_name?: string | null;
     created_at: string;
     updated_at: string;
 };
@@ -23,6 +29,7 @@ export declare class RequestsService {
     getById(id: number): Promise<RequestRow | null>;
     listRequests(filters: {
         status?: RequestStatus;
+        statuses?: RequestStatus[];
         branch_id?: number;
         count_id?: number;
         limit?: number;

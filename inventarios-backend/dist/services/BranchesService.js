@@ -1,184 +1,103 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BranchesService = void 0;
+exports.branchesService = exports.BranchesService = void 0;
 const database_1 = require("../config/database");
-const logger_1 = require("../utils/logger");
-/**
- * BranchesService - Servicio para gestionar sucursales en la base de datos local
- */
+const ConnectionManager_1 = require("../connections/ConnectionManager");
 class BranchesService {
     pool = (0, database_1.getLocalPool)();
     /**
-     * Obtiene todas las sucursales de la base de datos local
+     * Obtiene todas las sucursales directamente de la DB
      */
-    async getAllBranches() {
-        const [rows] = await this.pool.execute('SELECT * FROM branches ORDER BY code');
+    async getAllFromDb() {
+        const [rows] = await this.pool.execute('SELECT id, code, name, db_host, db_port, db_user, db_password, db_database, status FROM branches ORDER BY name ASC');
         return rows;
-    }
-    /**
-     * Obtiene una sucursal por ID
-     */
-    async getBranchById(id) {
-        const [rows] = await this.pool.execute('SELECT * FROM branches WHERE id = ?', [id]);
-        if (rows.length === 0) {
-            return null;
-        }
-        return rows[0];
-    }
-    /**
-     * Obtiene una sucursal por código
-     */
-    async getBranchByCode(code) {
-        const [rows] = await this.pool.execute('SELECT * FROM branches WHERE code = ?', [code]);
-        if (rows.length === 0) {
-            return null;
-        }
-        return rows[0];
     }
     /**
      * Crea una nueva sucursal
      */
-    async createBranch(data) {
-        const query = `
-      INSERT INTO branches (
-        code, name, db_host, db_port, db_user, db_password, db_database, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-        const [result] = await this.pool.execute(query, [
+    async create(data) {
+        const [result] = await this.pool.execute(`INSERT INTO branches (code, name, db_host, db_port, db_user, db_password, db_database, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
             data.code,
             data.name,
-            data.db_host,
-            data.db_port,
-            data.db_user,
-            data.db_password,
-            data.db_password, // Idealmente encriptado
-            data.db_database,
-            data.status || 'active'
+            data.host,
+            data.port || 3306,
+            data.user,
+            data.password,
+            data.database,
+            'active'
         ]);
-        const branch = await this.getBranchById(result.insertId);
-        if (!branch) {
-            throw new Error('Failed to create branch');
-        }
-        logger_1.logger.info(`Branch created: ${data.code} - ${data.name}`);
-        return branch;
+        const newId = result.insertId;
+        // Actualizar ConnectionManager dinámicamente
+        const cm = ConnectionManager_1.ConnectionManager.getInstance();
+        await cm.addBranch({
+            id: newId,
+            code: data.code,
+            name: data.name,
+            host: data.host,
+            port: data.port || 3306,
+            user: data.user,
+            password: data.password,
+            database: data.database
+        });
+        return newId;
     }
     /**
-     * Actualiza una sucursal
+     * Actualiza una sucursal existente
      */
-    async updateBranch(id, data) {
-        const updates = [];
+    async update(id, data) {
+        const fields = [];
         const params = [];
-        if (data.code !== undefined) {
-            updates.push('code = ?');
+        if (data.code) {
+            fields.push('code = ?');
             params.push(data.code);
         }
-        if (data.name !== undefined) {
-            updates.push('name = ?');
+        if (data.name) {
+            fields.push('name = ?');
             params.push(data.name);
         }
-        if (data.db_host !== undefined) {
-            updates.push('db_host = ?');
-            params.push(data.db_host);
+        if (data.host) {
+            fields.push('db_host = ?');
+            params.push(data.host);
         }
-        if (data.db_port !== undefined) {
-            updates.push('db_port = ?');
-            params.push(data.db_port);
+        if (data.port) {
+            fields.push('db_port = ?');
+            params.push(data.port);
         }
-        if (data.db_user !== undefined) {
-            updates.push('db_user = ?');
-            params.push(data.db_user);
+        if (data.user) {
+            fields.push('db_user = ?');
+            params.push(data.user);
         }
-        if (data.db_password !== undefined) {
-            updates.push('db_password = ?');
-            params.push(data.db_password);
+        if (data.password) {
+            fields.push('db_password = ?');
+            params.push(data.password);
         }
-        if (data.db_database !== undefined) {
-            updates.push('db_database = ?');
-            params.push(data.db_database);
+        if (data.database) {
+            fields.push('db_database = ?');
+            params.push(data.database);
         }
-        if (data.status !== undefined) {
-            updates.push('status = ?');
-            params.push(data.status);
-        }
-        if (updates.length === 0) {
-            throw new Error('No fields to update');
-        }
+        if (fields.length === 0)
+            return;
         params.push(id);
-        const query = `UPDATE branches SET ${updates.join(', ')} WHERE id = ?`;
-        await this.pool.execute(query, params);
-        const branch = await this.getBranchById(id);
-        if (!branch) {
-            throw new Error('Branch not found after update');
+        await this.pool.execute(`UPDATE branches SET ${fields.join(', ')} WHERE id = ?`, params);
+        // Recargar la sucursal en el ConnectionManager
+        const [rows] = await this.pool.execute('SELECT id, code, name, db_host as host, db_port as port, db_user as user, db_password as password, db_database as \`database\` FROM branches WHERE id = ?', [id]);
+        if (rows.length > 0) {
+            const config = rows[0];
+            const cm = ConnectionManager_1.ConnectionManager.getInstance();
+            await cm.addBranch(config);
         }
-        logger_1.logger.info(`Branch ${id} updated`);
-        return branch;
-    }
-    /**
-     * Actualiza el estado de conexión de una sucursal
-     */
-    async updateConnectionStatus(id, status, connectionStatus, errorMessage) {
-        await this.pool.execute(`UPDATE branches
-       SET status = ?, connection_status = ?, last_connection_check = NOW()
-       WHERE id = ?`, [status, connectionStatus, id]);
-        logger_1.logger.debug(`Branch ${id} connection status updated: ${connectionStatus}`);
     }
     /**
      * Elimina una sucursal
      */
-    async deleteBranch(id) {
+    async delete(id) {
         await this.pool.execute('DELETE FROM branches WHERE id = ?', [id]);
-        logger_1.logger.info(`Branch ${id} deleted`);
-    }
-    /**
-     * Convierte las sucursales de la BD a formato BranchDbConfig
-     * Para usar con ConnectionManager
-     */
-    async getBranchesAsConfig() {
-        const branches = await this.getAllBranches();
-        return branches
-            .filter((branch) => branch.status === 'active')
-            .map((branch) => ({
-            id: branch.id,
-            code: branch.code,
-            name: branch.name,
-            host: branch.db_host,
-            port: branch.db_port,
-            user: branch.db_user,
-            password: branch.db_password,
-            database: branch.db_database,
-            poolMax: 5
-        }));
-    }
-    /**
-     * Prueba la conexión a una sucursal
-     */
-    async testConnection(id) {
-        try {
-            const branch = await this.getBranchById(id);
-            if (!branch) {
-                return { success: false, message: 'Branch not found' };
-            }
-            const mysql = require('mysql2/promise');
-            const connection = await mysql.createConnection({
-                host: branch.db_host,
-                port: branch.db_port,
-                user: branch.db_user,
-                password: branch.db_password,
-                database: branch.db_database,
-                connectTimeout: 5000
-            });
-            await connection.ping();
-            await connection.end();
-            await this.updateConnectionStatus(id, 'active', 'connected');
-            return { success: true, message: 'Connection successful' };
-        }
-        catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            await this.updateConnectionStatus(id, 'error', 'error', errorMessage);
-            return { success: false, message: errorMessage };
-        }
+        // Eliminar del ConnectionManager
+        const cm = ConnectionManager_1.ConnectionManager.getInstance();
+        await cm.removeBranch(id);
     }
 }
 exports.BranchesService = BranchesService;
-exports.default = BranchesService;
+exports.branchesService = new BranchesService();
 //# sourceMappingURL=BranchesService.js.map

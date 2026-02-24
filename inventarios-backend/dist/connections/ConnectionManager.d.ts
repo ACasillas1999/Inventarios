@@ -15,9 +15,13 @@ export declare class ConnectionManager {
      */
     initializeBranches(branches: BranchDbConfig[]): Promise<void>;
     /**
-     * Agrega una nueva conexión de sucursal
+     * Agrega una nueva conexión de sucursal o actualiza una existente
      */
     addBranch(config: BranchDbConfig): Promise<void>;
+    /**
+     * Elimina una conexión de sucursal y cierra su pool
+     */
+    removeBranch(branchId: number): Promise<void>;
     /**
      * Obtiene el pool de una sucursal por ID
      */

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getItemCodes = exports.getLines = exports.invalidateCache = exports.searchItems = exports.getItemInfo = exports.compareStock = exports.getStockAllBranches = exports.getBatchStock = exports.getStock = void 0;
+exports.getItemCodes = exports.getItemWarehousesStock = exports.getLines = exports.getWarehouses = exports.invalidateCache = exports.searchItems = exports.getItemInfo = exports.compareStock = exports.getStockAllBranches = exports.getBatchStock = exports.getStock = void 0;
 const StockService_1 = __importDefault(require("../services/StockService"));
 const logger_1 = require("../utils/logger");
 const stockService = new StockService_1.default();
@@ -165,20 +165,25 @@ const getItemInfo = async (req, res) => {
 exports.getItemInfo = getItemInfo;
 /**
  * Busca artículos en una sucursal
- * GET /api/stock/:branchId/items?search=xxx&linea=yyy&limit=50&offset=0
+ * GET /api/stock/:branchId/items?search=xxx&linea=yyy&almacen=1&limit=50&offset=0
  */
 const searchItems = async (req, res) => {
     try {
         const branchId = parseInt(req.params.branchId);
         const search = req.query.search;
         const linea = req.query.linea;
-        const limit = parseInt(req.query.limit) || 50;
-        const offset = parseInt(req.query.offset) || 0;
+        const almacen = parseInt(req.query.almacen) || 1;
+        const limitParam = req.query.limit;
+        const offsetParam = req.query.offset;
+        const parsedLimit = limitParam !== undefined ? parseInt(limitParam) : NaN;
+        const parsedOffset = offsetParam !== undefined ? parseInt(offsetParam) : NaN;
+        const limit = Number.isNaN(parsedLimit) ? 50 : Math.max(parsedLimit, 0);
+        const offset = Number.isNaN(parsedOffset) ? 0 : Math.max(parsedOffset, 0);
         if (isNaN(branchId)) {
             res.status(400).json({ error: 'Invalid branch ID' });
             return;
         }
-        const items = await stockService.searchItems(branchId, search, linea, limit, offset);
+        const items = await stockService.searchItems(branchId, search, linea, limit, offset, almacen);
         res.json({
             branch_id: branchId,
             items,
@@ -221,6 +226,26 @@ const invalidateCache = async (req, res) => {
 };
 exports.invalidateCache = invalidateCache;
 /**
+ * Obtiene los almacenes disponibles en una sucursal
+ * GET /api/stock/:branchId/warehouses
+ */
+const getWarehouses = async (req, res) => {
+    try {
+        const branchId = parseInt(req.params.branchId);
+        if (isNaN(branchId)) {
+            res.status(400).json({ error: 'Invalid branch ID' });
+            return;
+        }
+        const warehouses = await stockService.getWarehouses(branchId);
+        res.json({ branch_id: branchId, warehouses });
+    }
+    catch (error) {
+        logger_1.logger.error('Get warehouses error:', error);
+        res.status(500).json({ error: 'Failed to get warehouses' });
+    }
+};
+exports.getWarehouses = getWarehouses;
+/**
  * Obtiene las líneas/familias disponibles en el catálogo de una sucursal
  * GET /api/stock/:branchId/lines
  */
@@ -240,6 +265,31 @@ const getLines = async (req, res) => {
     }
 };
 exports.getLines = getLines;
+/**
+ * Obtiene las existencias de un artículo en TODOS los almacenes de una sucursal
+ * GET /api/stock/:branchId/item/:itemCode/warehouses
+ */
+const getItemWarehousesStock = async (req, res) => {
+    try {
+        const branchId = parseInt(req.params.branchId);
+        const itemCode = req.params.itemCode;
+        if (isNaN(branchId)) {
+            res.status(400).json({ error: 'Invalid branch ID' });
+            return;
+        }
+        const result = await stockService.getItemWarehousesStock(branchId, itemCode);
+        if (!result) {
+            res.status(404).json({ error: 'Item not found' });
+            return;
+        }
+        res.json(result);
+    }
+    catch (error) {
+        logger_1.logger.error('Get item warehouses stock error:', error);
+        res.status(500).json({ error: 'Failed to get item warehouses stock' });
+    }
+};
+exports.getItemWarehousesStock = getItemWarehousesStock;
 /**
  * Obtiene los códigos de artículos de una sucursal (opcionalmente filtrado por línea)
  * GET /api/stock/:branchId/item-codes?linea=xxx
@@ -269,7 +319,9 @@ exports.default = {
     getItemInfo: exports.getItemInfo,
     searchItems: exports.searchItems,
     invalidateCache: exports.invalidateCache,
+    getWarehouses: exports.getWarehouses,
     getLines: exports.getLines,
-    getItemCodes: exports.getItemCodes
+    getItemCodes: exports.getItemCodes,
+    getItemWarehousesStock: exports.getItemWarehousesStock
 };
 //# sourceMappingURL=stockController.js.map

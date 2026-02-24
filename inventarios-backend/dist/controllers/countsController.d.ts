@@ -6,6 +6,11 @@ import { AuthRequest } from '../middlewares/auth';
  */
 export declare const createCount: (req: AuthRequest, res: Response) => Promise<void>;
 /**
+ * Historial de artículos contados en un rango (por sucursal)
+ * POST /api/counts/history/items
+ */
+export declare const getItemsHistory: (req: AuthRequest, res: Response) => Promise<void>;
+/**
  * Obtiene un conteo por ID
  * GET /api/counts/:id
  */
@@ -49,12 +54,12 @@ export declare const updateCountDetail: (req: AuthRequest, res: Response) => Pro
  * Obtiene estadísticas del dashboard
  * GET /api/counts/stats/dashboard
  */
-export declare const getDashboardStats: (req: AuthRequest, res: Response) => Promise<void>;
+export declare const getDashboardStats: (_req: AuthRequest, res: Response) => Promise<void>;
 /**
  * Lista diferencias de conteos
  * GET /api/counts/differences
  */
-export declare const listDifferences: (req: AuthRequest, res: Response) => Promise<void>;
+export declare const listDifferences: (_req: AuthRequest, res: Response) => Promise<void>;
 /**
  * Elimina un conteo
  * DELETE /api/counts/:id
@@ -66,12 +71,13 @@ declare const _default: {
     getCountByFolio: (req: AuthRequest, res: Response) => Promise<void>;
     listCounts: (req: AuthRequest, res: Response) => Promise<void>;
     updateCount: (req: AuthRequest, res: Response) => Promise<void>;
+    getItemsHistory: (req: AuthRequest, res: Response) => Promise<void>;
     createRequestsFromCount: (req: AuthRequest, res: Response) => Promise<void>;
     getCountDetails: (req: AuthRequest, res: Response) => Promise<void>;
     addCountDetail: (req: AuthRequest, res: Response) => Promise<void>;
     updateCountDetail: (req: AuthRequest, res: Response) => Promise<void>;
-    getDashboardStats: (req: AuthRequest, res: Response) => Promise<void>;
-    listDifferences: (req: AuthRequest, res: Response) => Promise<void>;
+    getDashboardStats: (_req: AuthRequest, res: Response) => Promise<void>;
+    listDifferences: (_req: AuthRequest, res: Response) => Promise<void>;
     deleteCount: (req: AuthRequest, res: Response) => Promise<void>;
 };
 export default _default;

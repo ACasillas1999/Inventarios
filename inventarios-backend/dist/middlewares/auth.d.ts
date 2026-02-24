@@ -15,6 +15,10 @@ export declare const authMiddleware: (req: AuthRequest, res: Response, next: Nex
  */
 export declare const requireRole: (...allowedRoles: number[]) => (req: AuthRequest, res: Response, next: NextFunction) => void;
 /**
+ * Middleware para verificar permisos específicos basados en la base de datos
+ */
+export declare const requirePermission: (permission: string) => (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
+/**
  * Genera un token JWT
  */
 export declare const generateToken: (user: {

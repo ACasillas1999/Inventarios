@@ -5,10 +5,37 @@ import { auditService } from './AuditService'
 
 export type RequestStatus = 'pendiente' | 'en_revision' | 'ajustado' | 'rechazado'
 
+const requestStatusTransitions: Record<RequestStatus, RequestStatus[]> = {
+  pendiente: ['en_revision'],
+  en_revision: ['ajustado', 'rechazado'],
+  ajustado: [],
+  rechazado: [],
+}
+
+const canTransitionRequestStatus = (from: RequestStatus, to: RequestStatus): boolean =>
+  from === to || requestStatusTransitions[from].includes(to)
+
+const requestSelectQuery = `
+  SELECT
+    r.*,
+    c.folio as count_folio,
+    c.classification as count_classification,
+    cd.warehouse_id,
+    cd.warehouse_name,
+    u_requested.name as requested_by_name,
+    u_reviewed.name as reviewed_by_name
+  FROM requests r
+  LEFT JOIN counts c ON r.count_id = c.id
+  LEFT JOIN count_details cd ON r.count_detail_id = cd.id
+  LEFT JOIN users u_requested ON r.requested_by_user_id = u_requested.id
+  LEFT JOIN users u_reviewed ON r.reviewed_by_user_id = u_reviewed.id
+`
+
 export type RequestRow = {
   id: number
   folio: string
   count_id: number
+  count_folio?: string
   count_detail_id: number
   branch_id: number
   item_code: string
@@ -24,6 +51,8 @@ export type RequestRow = {
   warehouse_id?: number
   warehouse_name?: string
   count_classification?: 'inventario' | 'ajuste'
+  requested_by_name?: string | null
+  reviewed_by_name?: string | null
   created_at: string
   updated_at: string
 }
@@ -32,39 +61,40 @@ export class RequestsService {
   private pool = getLocalPool()
 
   async getById(id: number): Promise<RequestRow | null> {
-    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT * FROM requests WHERE id = ?', [
-      id
-    ])
+    const [rows] = await this.pool.execute<RowDataPacket[]>(
+      `${requestSelectQuery}
+       WHERE r.id = ?
+       LIMIT 1`,
+      [id]
+    )
     if (!rows.length) return null
     return rows[0] as any
   }
 
   async listRequests(filters: {
     status?: RequestStatus
+    statuses?: RequestStatus[]
     branch_id?: number
     count_id?: number
     limit?: number
     offset?: number
   }): Promise<{ requests: RequestRow[]; total: number }> {
-    let query = `
-      SELECT 
-        r.*,
-        c.folio as count_folio,
-        c.classification as count_classification,
-        cd.warehouse_id,
-        cd.warehouse_name
-      FROM requests r
-      LEFT JOIN counts c ON r.count_id = c.id
-      LEFT JOIN count_details cd ON r.count_detail_id = cd.id
-      WHERE 1=1
-    `
+    let query = `${requestSelectQuery} WHERE 1=1`
     let countQuery = 'SELECT COUNT(*) as total FROM requests r WHERE 1=1'
     const params: any[] = []
 
-    if (filters.status) {
-      query += ' AND r.status = ?'
-      countQuery += ' AND r.status = ?'
-      params.push(filters.status)
+    const statusFilters =
+      Array.isArray(filters.statuses) && filters.statuses.length
+        ? filters.statuses
+        : filters.status
+          ? [filters.status]
+          : []
+
+    if (statusFilters.length) {
+      const placeholders = statusFilters.map(() => '?').join(', ')
+      query += ` AND r.status IN (${placeholders})`
+      countQuery += ` AND r.status IN (${placeholders})`
+      params.push(...statusFilters)
     }
 
     if (filters.branch_id) {
@@ -110,15 +140,15 @@ export class RequestsService {
 
     const updates: string[] = []
     const params: any[] = []
+    const statusChanged = data.status !== undefined && data.status !== existing.status
 
     if (data.status !== undefined) {
+      if (!canTransitionRequestStatus(existing.status, data.status)) {
+        throw new Error('Invalid status transition')
+      }
+
       updates.push('status = ?')
       params.push(data.status)
-
-      // Si se resuelve (ajustado/rechazado), setear reviewed_at si no viene explícito.
-      if ((data.status === 'ajustado' || data.status === 'rechazado') && data.reviewed_at === undefined) {
-        updates.push('reviewed_at = NOW()')
-      }
     }
 
     if (data.resolution_notes !== undefined) {
@@ -131,13 +161,13 @@ export class RequestsService {
       params.push(data.evidence_file)
     }
 
-    if (data.reviewed_by_user_id !== undefined) {
+    if (statusChanged && data.reviewed_by_user_id !== undefined) {
       updates.push('reviewed_by_user_id = ?')
       params.push(data.reviewed_by_user_id)
     }
 
-    if (data.reviewed_at !== undefined) {
-      if (data.reviewed_at === 'NOW') {
+    if (statusChanged) {
+      if (data.reviewed_at === undefined || data.reviewed_at === 'NOW') {
         updates.push('reviewed_at = NOW()')
       } else {
         updates.push('reviewed_at = ?')
@@ -158,8 +188,8 @@ export class RequestsService {
       emitRequestStatus(id, updated.folio, existing.status, data.status)
     }
 
-    // Log the review/update
-    if (data.reviewed_by_user_id) {
+    // Log status update
+    if (statusChanged && data.reviewed_by_user_id) {
       await auditService.log({
         user_id: data.reviewed_by_user_id,
         action: 'UPDATE_REQUEST',

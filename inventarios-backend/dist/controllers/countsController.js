@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteCount = exports.listDifferences = exports.getDashboardStats = exports.updateCountDetail = exports.addCountDetail = exports.getCountDetails = exports.createRequestsFromCount = exports.updateCount = exports.listCounts = exports.getCountByFolio = exports.getCount = exports.createCount = void 0;
+exports.deleteCount = exports.listDifferences = exports.getDashboardStats = exports.updateCountDetail = exports.addCountDetail = exports.getCountDetails = exports.createRequestsFromCount = exports.updateCount = exports.listCounts = exports.getCountByFolio = exports.getCount = exports.getItemsHistory = exports.createCount = void 0;
 const CountsService_1 = __importDefault(require("../services/CountsService"));
 const logger_1 = require("../utils/logger");
 const countsService = new CountsService_1.default();
@@ -23,13 +23,17 @@ const createCount = async (req, res) => {
             res.status(400).json({ error: 'Missing required fields' });
             return;
         }
-        const count = await countsService.createCount(userId, data);
-        res.status(201).json(count);
+        const counts = await countsService.createCount(userId, data);
+        res.status(201).json({
+            counts,
+            total_created: counts.length,
+            folios: counts.map(c => c.folio)
+        });
     }
     catch (error) {
         logger_1.logger.error('Create count error:', error);
         const message = error instanceof Error ? error.message : 'Failed to create count';
-        if (typeof message === 'string' && message.startsWith('Too many items')) {
+        if (typeof message === 'string' && (message.startsWith('Too many items') || message.includes('No items found'))) {
             res.status(400).json({ error: message });
             return;
         }
@@ -37,6 +41,38 @@ const createCount = async (req, res) => {
     }
 };
 exports.createCount = createCount;
+/**
+ * Historial de artículos contados en un rango (por sucursal)
+ * POST /api/counts/history/items
+ */
+const getItemsHistory = async (req, res) => {
+    try {
+        const branchId = Number(req.body?.branch_id);
+        const itemCodes = Array.isArray(req.body?.item_codes) ? req.body.item_codes : [];
+        const from = req.body?.from ? String(req.body.from) : '';
+        const to = req.body?.to ? String(req.body.to) : '';
+        const almacen = req.body?.almacen ? Number(req.body.almacen) : undefined;
+        if (!Number.isFinite(branchId) || branchId <= 0) {
+            res.status(400).json({ error: 'Invalid branch_id' });
+            return;
+        }
+        if (!from || !to) {
+            res.status(400).json({ error: 'from/to are required' });
+            return;
+        }
+        if (itemCodes.length === 0) {
+            res.json({ branch_id: branchId, from, to, almacen, items: [] });
+            return;
+        }
+        const items = await countsService.getItemsHistory(branchId, itemCodes, from, to, almacen);
+        res.json({ branch_id: branchId, from, to, almacen, items });
+    }
+    catch (error) {
+        logger_1.logger.error('Get items history error:', error);
+        res.status(500).json({ error: 'Failed to get items history' });
+    }
+};
+exports.getItemsHistory = getItemsHistory;
 /**
  * Obtiene un conteo por ID
  * GET /api/counts/:id
@@ -87,15 +123,32 @@ exports.getCountByFolio = getCountByFolio;
  */
 const listCounts = async (req, res) => {
     try {
+        const allowedStatuses = ['pendiente', 'contando', 'contado', 'cerrado', 'cancelado'];
+        const rawStatus = req.query.status;
+        const statusValues = rawStatus === undefined
+            ? []
+            : Array.isArray(rawStatus)
+                ? rawStatus.flatMap((value) => String(value).split(',').map((entry) => entry.trim()).filter(Boolean))
+                : String(rawStatus).split(',').map((entry) => entry.trim()).filter(Boolean);
+        const invalidStatus = statusValues.find((value) => !allowedStatuses.includes(value));
+        if (invalidStatus) {
+            res.status(400).json({ error: 'Invalid status' });
+            return;
+        }
         const filters = {
             branch_id: req.query.branch_id ? parseInt(req.query.branch_id) : undefined,
-            status: req.query.status,
+            status: statusValues.length === 1 ? statusValues[0] : undefined,
+            statuses: statusValues.length > 1 ? statusValues : undefined,
             type: req.query.type,
+            classification: req.query.classification,
             responsible_user_id: req.query.responsible_user_id
                 ? parseInt(req.query.responsible_user_id)
                 : undefined,
             date_from: req.query.date_from,
             date_to: req.query.date_to,
+            scheduled_from: req.query.scheduled_from,
+            scheduled_to: req.query.scheduled_to,
+            search: req.query.search,
             limit: req.query.limit ? parseInt(req.query.limit) : 50,
             offset: req.query.offset ? parseInt(req.query.offset) : 0
         };
@@ -120,7 +173,12 @@ const updateCount = async (req, res) => {
             res.status(400).json({ error: 'Invalid count ID' });
             return;
         }
-        const count = await countsService.updateCount(id, data);
+        const userId = req.user?.id;
+        if (!userId) {
+            res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
+        const count = await countsService.updateCount(id, data, userId);
         res.json(count);
     }
     catch (error) {
@@ -248,7 +306,12 @@ const updateCountDetail = async (req, res) => {
             res.status(400).json({ error: 'counted_stock is required' });
             return;
         }
-        const detail = await countsService.updateCountDetail(id, data);
+        const userId = req.user?.id;
+        if (!userId) {
+            res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
+        const detail = await countsService.updateCountDetail(id, data, userId);
         res.json(detail);
     }
     catch (error) {
@@ -261,7 +324,7 @@ exports.updateCountDetail = updateCountDetail;
  * Obtiene estadísticas del dashboard
  * GET /api/counts/stats/dashboard
  */
-const getDashboardStats = async (req, res) => {
+const getDashboardStats = async (_req, res) => {
     try {
         const stats = await countsService.getDashboardStats();
         res.json(stats);
@@ -276,7 +339,7 @@ exports.getDashboardStats = getDashboardStats;
  * Lista diferencias de conteos
  * GET /api/counts/differences
  */
-const listDifferences = async (req, res) => {
+const listDifferences = async (_req, res) => {
     try {
         const diffs = await countsService.listDifferences();
         res.json(diffs);
@@ -298,7 +361,12 @@ const deleteCount = async (req, res) => {
             res.status(400).json({ error: 'Invalid count ID' });
             return;
         }
-        await countsService.deleteCount(id);
+        const userId = req.user?.id;
+        if (!userId) {
+            res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
+        await countsService.deleteCount(id, userId);
         res.json({ message: 'Count deleted successfully' });
     }
     catch (error) {
@@ -313,6 +381,7 @@ exports.default = {
     getCountByFolio: exports.getCountByFolio,
     listCounts: exports.listCounts,
     updateCount: exports.updateCount,
+    getItemsHistory: exports.getItemsHistory,
     createRequestsFromCount: exports.createRequestsFromCount,
     getCountDetails: exports.getCountDetails,
     addCountDetail: exports.addCountDetail,

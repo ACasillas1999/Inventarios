@@ -1,0 +1,13 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_1 = require("../middlewares/auth");
+const auditController_1 = __importDefault(require("../controllers/auditController"));
+const router = (0, express_1.Router)();
+router.use(auth_1.authMiddleware);
+router.get('/', auditController_1.default.listAuditLogs);
+exports.default = router;
+//# sourceMappingURL=audit.routes.js.map

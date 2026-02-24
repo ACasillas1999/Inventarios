@@ -10,7 +10,9 @@ const router = (0, express_1.Router)();
 // Todas las rutas requieren autenticación
 router.use(auth_1.authMiddleware);
 // Consultas de artículos
+router.get('/:branchId/item/:itemCode/warehouses', stockController_1.default.getItemWarehousesStock);
 router.get('/:branchId/item/:itemCode', stockController_1.default.getItemInfo);
+router.get('/:branchId/warehouses', stockController_1.default.getWarehouses);
 router.get('/:branchId/lines', stockController_1.default.getLines);
 router.get('/:branchId/item-codes', stockController_1.default.getItemCodes);
 router.get('/:branchId/items', stockController_1.default.searchItems);

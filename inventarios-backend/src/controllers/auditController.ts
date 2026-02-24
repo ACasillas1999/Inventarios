@@ -7,6 +7,7 @@ export const listAuditLogs = async (req: AuthRequest, res: Response): Promise<vo
     try {
         const userId = req.query.user_id ? parseInt(req.query.user_id as string) : undefined
         const entityType = req.query.entity_type as string
+        const entityId = req.query.entity_id ? parseInt(req.query.entity_id as string) : undefined
         const dateFrom = req.query.date_from as string
         const dateTo = req.query.date_to as string
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50
@@ -15,6 +16,7 @@ export const listAuditLogs = async (req: AuthRequest, res: Response): Promise<vo
         const result = await auditService.list({
             user_id: userId,
             entity_type: entityType,
+            entity_id: entityId,
             date_from: dateFrom,
             date_to: dateTo,
             limit,
