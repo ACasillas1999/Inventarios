@@ -32,6 +32,7 @@ import specialLinesRoutes from './routes/special-lines.routes'
 import reportsRoutes from './routes/reports.routes'
 import auditRoutes from './routes/audit.routes'
 import settingsRoutes from './routes/settings.routes'
+import testDataRoutes from './routes/test-data.routes'
 
 // Constantes
 const PORT = parseInt(process.env.PORT || '3000')
@@ -95,6 +96,7 @@ const createApp = (): Application => {
   app.use('/api/reports', reportsRoutes)
   app.use('/api/audit', auditRoutes)
   app.use('/api/settings', settingsRoutes)
+  app.use('/api/test-data', testDataRoutes)
 
   // Ruta raíz
   app.get('/', (_req: Request, res: Response) => {

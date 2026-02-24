@@ -469,22 +469,25 @@ export class StockService {
   async getWarehouses(branchId: number): Promise<Array<{ almacen: number; nombre?: string }>> {
     try {
       const query = `
-        SELECT DISTINCT Almacen as almacen
-        FROM articuloalm
-        WHERE Almacen IS NOT NULL
-        ORDER BY Almacen ASC
+        SELECT DISTINCT 
+          aa.Almacen as almacen,
+          alm.Nombre as nombre
+        FROM articuloalm aa
+        LEFT JOIN almacenes alm ON aa.Almacen = alm.Almacen
+        WHERE aa.Almacen IS NOT NULL
+        ORDER BY aa.Almacen ASC
       `
 
-      const results = await this.connectionManager.executeQuery<{ almacen: number }>(
+      const results = await this.connectionManager.executeQuery<{ almacen: number; nombre?: string }>(
         branchId,
         query,
         []
       )
 
-      // Devolver con nombres descriptivos
+      // Devolver con nombres desde la BD o fallback descriptivo
       return results.map((row) => ({
         almacen: row.almacen,
-        nombre: row.almacen === 1 ? 'Sucursal principal' : `Bodega ${row.almacen}`
+        nombre: row.nombre || (row.almacen === 1 ? 'Sucursal principal' : `Almacén ${row.almacen}`)
       }))
     } catch (error: any) {
       if (error.code === 'ER_NO_SUCH_TABLE') {

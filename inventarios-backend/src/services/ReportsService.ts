@@ -167,15 +167,31 @@ export class ReportsService {
 
         for (const branch of branches) {
             try {
-                // 1. Obtener total de artículos únicos en esta sucursal (solo de almacenes habilitados)
-                const [remoteCount] = await cm.executeQuery<any>(branch.id, `
+                // 1. Obtener total de artículos únicos en esta sucursal
+                let query = `
                     SELECT COUNT(DISTINCT a.Clave_Articulo) as total 
                     FROM articulo a
                     JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
                     JOIN almacenes alm ON aa.Almacen = alm.Almacen
                     WHERE alm.Habilitado = 1
-                `)
-                const branchTotal = remoteCount?.total || 0
+                `
+                let remoteCount: any;
+                try {
+                    [remoteCount] = await cm.executeQuery<any>(branch.id, query)
+                } catch (err: any) {
+                    if (err?.code === 'ER_BAD_FIELD_ERROR' || err?.sqlState === '42S22') {
+                        query = `
+                            SELECT COUNT(DISTINCT a.Clave_Articulo) as total 
+                            FROM articulo a
+                            JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
+                            JOIN almacenes alm ON aa.Almacen = alm.Almacen
+                        `
+                        [remoteCount] = await cm.executeQuery<any>(branch.id, query)
+                    } else {
+                        throw err
+                    }
+                }
+                const branchTotal = remoteCount?.total || 0;
                 totalItems += branchTotal
 
                 // 2. Obtener artículos contados en esta sucursal (local)
@@ -220,14 +236,31 @@ export class ReportsService {
         for (const branch of branches) {
             try {
                 // Obtener datos por bodega y línea (remoto)
-                const remoteData = await cm.executeQuery<any>(branch.id, `
-          SELECT aa.Almacen as almacen_id, alm.Nombre as almacen_nombre, LEFT(a.Clave_Articulo, 5) as linea, COUNT(DISTINCT a.Clave_Articulo) as total 
-          FROM articulo a
-          JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
-          JOIN almacenes alm ON aa.Almacen = alm.Almacen
-          WHERE alm.Habilitado = 1
-          GROUP BY aa.Almacen, alm.Nombre, linea
-        `)
+                let remoteQuery = `
+                    SELECT aa.Almacen as almacen_id, alm.Nombre as almacen_nombre, LEFT(a.Clave_Articulo, 5) as linea, COUNT(DISTINCT a.Clave_Articulo) as total 
+                    FROM articulo a
+                    JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
+                    JOIN almacenes alm ON aa.Almacen = alm.Almacen
+                    WHERE alm.Habilitado = 1
+                    GROUP BY aa.Almacen, alm.Nombre, linea
+                `
+                let remoteData: any[];
+                try {
+                    remoteData = await cm.executeQuery<any>(branch.id, remoteQuery)
+                } catch (err: any) {
+                    if (err?.code === 'ER_BAD_FIELD_ERROR' || err?.sqlState === '42S22') {
+                        remoteQuery = `
+                            SELECT aa.Almacen as almacen_id, alm.Nombre as almacen_nombre, LEFT(a.Clave_Articulo, 5) as linea, COUNT(DISTINCT a.Clave_Articulo) as total 
+                            FROM articulo a
+                            JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
+                            JOIN almacenes alm ON aa.Almacen = alm.Almacen
+                            GROUP BY aa.Almacen, alm.Nombre, linea
+                        `
+                        remoteData = await cm.executeQuery<any>(branch.id, remoteQuery)
+                    } else {
+                        throw err
+                    }
+                }
 
                 // Obtener conteos por bodega y línea (local)
                 const [localData] = await this.pool.execute<RowDataPacket[]>(

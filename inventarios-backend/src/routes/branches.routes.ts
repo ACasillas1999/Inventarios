@@ -129,11 +129,20 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
       logger.info(`DEBUG: Connecting to Branch ${branchId} at HOST: ${currentConfig.host}, DB: ${currentConfig.database}`)
     }
 
-    const query = `
+    const queryWithEnabled = `
       SELECT 
         Almacen as id,
         Nombre as name,
         Habilitado as habilitado
+      FROM almacenes
+      ORDER BY Almacen ASC
+    `
+
+    const fallbackQuery = `
+      SELECT 
+        Almacen as id,
+        Nombre as name,
+        1 as habilitado
       FROM almacenes
       ORDER BY Almacen ASC
     `
@@ -144,11 +153,28 @@ router.get('/:id/warehouses', async (req: Request, res: Response) => {
       habilitado: number
     }
 
-    const warehouses = await connectionManager.executeQuery<WarehouseRow>(
-      branchId,
-      query,
-      []
-    )
+    let warehouses: WarehouseRow[] = []
+
+    try {
+      warehouses = await connectionManager.executeQuery<WarehouseRow>(
+        branchId,
+        queryWithEnabled,
+        []
+      )
+    } catch (error: any) {
+      if (error?.code === 'ER_BAD_FIELD_ERROR' || error?.sqlState === '42S22') {
+        logger.warn('Warehouses table has no Habilitado column. Returning all as enabled.', {
+          branch_id: branchId
+        })
+        warehouses = await connectionManager.executeQuery<WarehouseRow>(
+          branchId,
+          fallbackQuery,
+          []
+        )
+      } else {
+        throw error
+      }
+    }
 
     const enabled = warehouses.filter(w => w.habilitado === 1)
 

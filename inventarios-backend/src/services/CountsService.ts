@@ -379,6 +379,60 @@ export class CountsService {
   }
 
   /**
+   * Valida que no existan conteos activos con los mismos códigos de artículo
+   */
+  private async validateNoDuplicateActiveCounts(
+    branchId: number,
+    almacen: number,
+    itemCodes: string[]
+  ): Promise<void> {
+    if (itemCodes.length === 0) return
+
+    const CHUNK_SIZE = 500
+    const duplicates: Array<{ item_code: string; folio: string; status: string }> = []
+
+    for (let i = 0; i < itemCodes.length; i += CHUNK_SIZE) {
+      const chunk = itemCodes.slice(i, i + CHUNK_SIZE)
+      const placeholders = chunk.map(() => '?').join(',')
+
+      const sql = `
+        SELECT DISTINCT
+          cd.item_code,
+          c.folio,
+          c.status
+        FROM count_details cd
+        JOIN counts c ON c.id = cd.count_id
+        WHERE c.branch_id = ?
+          AND c.almacen = ?
+          AND c.status IN ('pendiente', 'en_proceso', 'contado')
+          AND cd.item_code IN (${placeholders})
+        ORDER BY cd.item_code, c.id DESC
+      `
+
+      const params = [branchId, almacen, ...chunk]
+      const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params)
+
+      for (const row of rows as any[]) {
+        duplicates.push({
+          item_code: String(row.item_code),
+          folio: String(row.folio),
+          status: String(row.status)
+        })
+      }
+    }
+
+    if (duplicates.length > 0) {
+      const duplicatesList = duplicates
+        .map(d => `• ${d.item_code} (Folio: ${d.folio}, Estado: ${d.status})`)
+        .join('\n')
+
+      throw new Error(
+        `No se pueden crear conteos.\n\nLos siguientes artículos ya tienen conteos activos:\n\n${duplicatesList}\n\nPor favor, cierra o cancela los conteos existentes antes de crear nuevos.`
+      )
+    }
+  }
+
+  /**
    * Crea múltiples conteos - uno por cada artículo en el almacén seleccionado
    */
   async createCount(userId: number, data: CreateCountRequest): Promise<Count[]> {
@@ -443,6 +497,9 @@ export class CountsService {
 
     // Use items found in catalog
     const itemsInWarehouse = itemsInCatalog
+
+    // Validate no duplicate active counts exist for these items
+    await this.validateNoDuplicateActiveCounts(data.branch_id, selectedWarehouse, itemsInWarehouse)
 
     // Step 2: Filter out already counted items if requested
     const finalItemsToCount: string[] = []
@@ -1611,23 +1668,93 @@ export class CountsService {
 
   /**
    * Obtiene estadísticas del dashboard
+   * Devuelve contadores globales, resumen por sucursal y conteos recientes
    */
-  async getDashboardStats(): Promise<{
-    open_counts: number
-    scheduled_counts: number
-    pending_requests: number
-    closed_counts: number
-  }> {
-    const [stats] = await this.pool.execute<RowDataPacket[]>(`
+  async getDashboardStats(): Promise<any> {
+    // 1. Contadores globales
+    const [globalRows] = await this.pool.execute<RowDataPacket[]>(`
       SELECT
-        SUM(CASE WHEN status IN ('pendiente', 'contando') THEN 1 ELSE 0 END) as open_counts,
-        SUM(CASE WHEN status = 'pendiente' AND scheduled_date IS NOT NULL THEN 1 ELSE 0 END) as scheduled_counts,
+        COUNT(*) as total_counts,
+        SUM(CASE WHEN status = 'pendiente' THEN 1 ELSE 0 END) as pending_counts,
+        SUM(CASE WHEN status = 'contando' THEN 1 ELSE 0 END) as in_progress_counts,
+        SUM(CASE WHEN status = 'contado' THEN 1 ELSE 0 END) as finished_counts,
         SUM(CASE WHEN status = 'cerrado' THEN 1 ELSE 0 END) as closed_counts,
-        (SELECT COUNT(*) FROM requests WHERE status = 'pendiente') as pending_requests
+        SUM(CASE WHEN status = 'cancelado' THEN 1 ELSE 0 END) as cancelled_counts,
+        SUM(CASE WHEN status = 'pendiente' AND DATE(scheduled_date) = CURDATE() THEN 1 ELSE 0 END) as scheduled_today
       FROM counts
     `)
+    const global = globalRows[0] || {}
 
-    return stats[0] as any
+    // 2. Resumen por sucursal
+    const [branchRows] = await this.pool.execute<RowDataPacket[]>(`
+      SELECT
+        b.id as branch_id,
+        b.name as branch_name,
+        COUNT(c.id) as total,
+        SUM(CASE WHEN c.status = 'pendiente' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN c.status = 'contando' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN c.status = 'contado' THEN 1 ELSE 0 END) as finished,
+        SUM(CASE WHEN c.status = 'cerrado' THEN 1 ELSE 0 END) as closed,
+        SUM(CASE WHEN c.status = 'cancelado' THEN 1 ELSE 0 END) as cancelled,
+        MAX(c.created_at) as last_count_date
+      FROM branches b
+      LEFT JOIN counts c ON c.branch_id = b.id
+      GROUP BY b.id, b.name
+      ORDER BY total DESC
+    `)
+
+    // 3. Conteos recientes (últimos 15)
+    const [recentRows] = await this.pool.execute<RowDataPacket[]>(`
+      SELECT
+        c.id,
+        c.folio,
+        c.status,
+        c.type,
+        c.classification,
+        c.created_at,
+        c.scheduled_date,
+        c.started_at,
+        c.closed_at,
+        b.name as branch_name,
+        u.name as responsible_name
+      FROM counts c
+      LEFT JOIN branches b ON b.id = c.branch_id
+      LEFT JOIN users u ON u.id = c.responsible_user_id
+      ORDER BY c.created_at DESC
+      LIMIT 15
+    `)
+
+    return {
+      total_counts: Number(global.total_counts ?? 0),
+      pending_counts: Number(global.pending_counts ?? 0),
+      in_progress_counts: Number(global.in_progress_counts ?? 0),
+      finished_counts: Number(global.finished_counts ?? 0),
+      closed_counts: Number(global.closed_counts ?? 0),
+      cancelled_counts: Number(global.cancelled_counts ?? 0),
+      scheduled_today: Number(global.scheduled_today ?? 0),
+      by_branch: (branchRows as any[]).map(b => ({
+        branch_id: b.branch_id,
+        branch_name: b.branch_name,
+        total: Number(b.total ?? 0),
+        pending: Number(b.pending ?? 0),
+        in_progress: Number(b.in_progress ?? 0),
+        finished: Number(b.finished ?? 0),
+        closed: Number(b.closed ?? 0),
+        cancelled: Number(b.cancelled ?? 0),
+        last_count_date: b.last_count_date ?? null
+      })),
+      recent_counts: (recentRows as any[]).map(c => ({
+        id: c.id,
+        folio: c.folio,
+        status: c.status,
+        type: c.type,
+        classification: c.classification,
+        branch_name: c.branch_name ?? '',
+        responsible_name: c.responsible_name ?? '',
+        scheduled_date: c.scheduled_date ?? null,
+        created_at: c.created_at
+      }))
+    }
   }
 
   /**
