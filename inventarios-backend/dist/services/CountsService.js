@@ -1010,6 +1010,16 @@ class CountsService {
                 logger_1.logger.error(`Error notifying count finish for ${id}:`, err);
             }
         }
+        // Generate adjustment requests automatically when a count is closed.
+        // Safe to retry because createRequestsFromCount skips existing request rows.
+        if (data.status === 'cerrado' && existing.status !== data.status) {
+            try {
+                await this.createRequestsFromCount(id, userId);
+            }
+            catch (err) {
+                logger_1.logger.error(`Error auto-creating requests for closed count ${id}:`, err);
+            }
+        }
         logger_1.logger.info(`Count ${id} updated`);
         return { ...count, specialLineAlerts };
     }

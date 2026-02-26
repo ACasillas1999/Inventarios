@@ -991,12 +991,12 @@ export class CountsService {
       WHERE 1=1
     `
     let countQuery = 'SELECT COUNT(*) as total FROM counts c WHERE 1=1'
-    const params: any[] = []
+    const filterParams: any[] = [] // params shared by both queries (filters only)
 
     if (filters.branch_id) {
       query += ' AND c.branch_id = ?'
       countQuery += ' AND c.branch_id = ?'
-      params.push(filters.branch_id)
+      filterParams.push(filters.branch_id)
     }
 
     const statusFilters =
@@ -1010,49 +1010,49 @@ export class CountsService {
       const placeholders = statusFilters.map(() => '?').join(', ')
       query += ` AND c.status IN (${placeholders})`
       countQuery += ` AND c.status IN (${placeholders})`
-      params.push(...statusFilters)
+      filterParams.push(...statusFilters)
     }
 
     if (filters.type) {
       query += ' AND c.type = ?'
       countQuery += ' AND c.type = ?'
-      params.push(filters.type)
+      filterParams.push(filters.type)
     }
 
     if (filters.classification) {
       query += ' AND c.classification = ?'
       countQuery += ' AND c.classification = ?'
-      params.push(filters.classification)
+      filterParams.push(filters.classification)
     }
 
     if (filters.responsible_user_id) {
       query += ' AND c.responsible_user_id = ?'
       countQuery += ' AND c.responsible_user_id = ?'
-      params.push(filters.responsible_user_id)
+      filterParams.push(filters.responsible_user_id)
     }
 
     if (filters.date_from) {
       query += ' AND c.created_at >= ?'
       countQuery += ' AND c.created_at >= ?'
-      params.push(filters.date_from)
+      filterParams.push(filters.date_from)
     }
 
     if (filters.date_to) {
       query += ' AND c.created_at <= ?'
       countQuery += ' AND c.created_at <= ?'
-      params.push(filters.date_to)
+      filterParams.push(filters.date_to)
     }
 
     if (filters.scheduled_from) {
       query += ' AND c.scheduled_date >= ?'
       countQuery += ' AND c.scheduled_date >= ?'
-      params.push(filters.scheduled_from)
+      filterParams.push(filters.scheduled_from)
     }
 
     if (filters.scheduled_to) {
       query += ' AND c.scheduled_date <= ?'
       countQuery += ' AND c.scheduled_date <= ?'
-      params.push(filters.scheduled_to)
+      filterParams.push(filters.scheduled_to)
     }
 
     if (filters.search) {
@@ -1069,24 +1069,26 @@ export class CountsService {
       )`
       query += searchSql
       countQuery += searchSql
-      params.push(search, search, search, search, search)
+      filterParams.push(search, search, search, search, search)
     }
 
     query += ' GROUP BY c.id'
     query += ' ORDER BY c.folio DESC'
 
+    // Build queryParams: filterParams + LIMIT/OFFSET (only for main query)
+    const queryParams: any[] = [...filterParams]
     if (filters.limit) {
       query += ' LIMIT ?'
-      params.push(filters.limit)
+      queryParams.push(filters.limit)
 
       if (filters.offset) {
         query += ' OFFSET ?'
-        params.push(filters.offset)
+        queryParams.push(filters.offset)
       }
     }
 
-    const [counts] = await this.pool.execute<RowDataPacket[]>(query, params)
-    const [countResult] = await this.pool.execute<RowDataPacket[]>(countQuery, params)
+    const [counts] = await this.pool.execute<RowDataPacket[]>(query, queryParams)
+    const [countResult] = await this.pool.execute<RowDataPacket[]>(countQuery, filterParams)
 
     // Get active special lines for detection
     const [specialLinesRows] = await this.pool.execute<RowDataPacket[]>(

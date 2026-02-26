@@ -5,6 +5,7 @@ import { countsService, stockService, specialLinesService, usersService, branche
 import { useAuthStore } from '@/stores/auth'
 import MobileMenuToggle from '@/components/MobileMenuToggle.vue'
 import { useSocketStore } from '@/stores/socket'
+import Swal from 'sweetalert2'
 
 const authStore = useAuthStore()
 const socketStore = useSocketStore()
@@ -152,6 +153,7 @@ const canEdit = computed(() => count.value?.status === 'contando')
 const isClosed = computed(() => count.value?.status === 'cerrado' || count.value?.status === 'contado')
 const isCancelled = computed(() => count.value?.status === 'cancelado')
 const isEditable = computed(() => canEdit.value && updatingDetailId.value === null && !isClosed.value && !isCancelled.value)
+const canCreateRequests = computed(() => authStore.hasPermission('requests.create'))
 
 const isCounted = (d: CountDetailRow) => Boolean(d.counted_at || d.counted_by_user_id)
 
@@ -408,6 +410,20 @@ const loadCount = async () => {
 
 const startCount = async () => {
   if (!count.value) return
+  if (!canStart.value) return
+  const result = await Swal.fire({
+    title: 'Iniciar conteo',
+    text: 'Se tomara la existencia actual del articulo y comenzara el tiempo de conteo.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Si, iniciar',
+    cancelButtonText: 'Cancelar',
+    reverseButtons: true,
+    confirmButtonColor: '#2563eb',
+    cancelButtonColor: '#64748b',
+  })
+  if (!result.isConfirmed) return
+
   try {
     actionMessage.value = ''
     await countsService.update(count.value.id, { status: 'contando' })
@@ -445,6 +461,26 @@ const saveDetail = async (detail: CountDetailRow) => {
   if (countedVal === null) {
     actionMessage.value = 'Captura una cantidad para guardar'
     return
+  }
+
+  const willCloseOnSave =
+    count.value.status === 'contando' &&
+    !isCounted(detail) &&
+    details.value.filter((d) => !isCounted(d) && d.id !== detail.id).length === 0
+
+  if (willCloseOnSave) {
+    const confirmClose = await Swal.fire({
+      title: 'Confirmar cierre de conteo',
+      text: 'Estas por guardar la ultima cantidad pendiente. Al confirmar se cerrara el conteo y se mostrara un resumen de diferencias. Deseas continuar?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Si, guardar y cerrar',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true,
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#64748b',
+    })
+    if (!confirmClose.isConfirmed) return
   }
 
   try {
@@ -603,8 +639,25 @@ const handleCountWarehouse = async (warehouse: any) => {
 
 const createAdjustmentRequests = async () => {
   if (!count.value) return
+  if (!canCreateRequests.value) {
+    alert('No tienes permisos para generar solicitudes de ajuste.')
+    return
+  }
   if (count.value.status !== 'cerrado' && count.value.status !== 'contado') return
   if (differenceRows.value.length === 0) return
+
+  const confirmGenerate = await Swal.fire({
+    title: 'Generar solicitud de diferencia',
+    text: 'Se detectaron diferencias. Deseas generar la solicitud de ajuste?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Si, generar solicitud',
+    cancelButtonText: 'Cancelar',
+    reverseButtons: true,
+    confirmButtonColor: '#2563eb',
+    cancelButtonColor: '#64748b',
+  })
+  if (!confirmGenerate.isConfirmed) return
 
   try {
     creatingRequests.value = true
@@ -620,6 +673,11 @@ const createAdjustmentRequests = async () => {
   } finally {
     creatingRequests.value = false
   }
+}
+
+const openSummaryModal = () => {
+  requestsResult.value = null
+  showSummaryModal.value = true
 }
 
 const loadSpecialLines = async () => {
@@ -843,6 +901,13 @@ const recentHistory = computed(() => {
             >
               Cancelar
             </button>
+            <button
+              v-if="isClosed"
+              class="btn ghost"
+              @click="openSummaryModal"
+            >
+              Resumen diferencias
+            </button>
             <button class="btn ghost" @click="loadCount">Refrescar</button>
           </div>
           <p class="muted" v-if="actionMessage">{{ actionMessage }}</p>
@@ -869,6 +934,13 @@ const recentHistory = computed(() => {
           </div>
           <div class="muted small">Pendientes: {{ pendingTotal }}</div>
         </div>
+      </div>
+
+      <div v-if="canEdit" class="count-entry-hint">
+        <strong>Captura requerida:</strong>
+        Ingresa la cantidad contada en
+        <strong>"Stock F&iacute;sico"</strong> (modo Captura) o en la columna
+        <strong>"Cantidad contada"</strong> (modo Tabla), y luego guarda.
       </div>
 
       <div v-if="viewMode === 'captura'" class="dashboard-wrap">
@@ -948,9 +1020,9 @@ const recentHistory = computed(() => {
                     <div class="stock-value">{{ safeNumber(selectedDetail.system_stock) ?? '-' }}</div>
                   </div>
                   
-                  <div class="stock-box physical">
+                  <div class="stock-box physical" :class="{ 'count-target-box': isEditable }">
                     <label>Stock Físico</label>
-                    <div class="stepper-wrapper">
+                    <div class="stepper-wrapper" :class="{ 'count-field-highlight': isEditable && updatingDetailId !== selectedDetail.id }">
                       <button class="stepper-btn" @click="adjustCountedStock(-1, $event)" :disabled="!isEditable || updatingDetailId === selectedDetail.id">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                       </button>
@@ -1032,7 +1104,7 @@ const recentHistory = computed(() => {
                 <th>Almacén</th>
                 <th>Descripcion</th>
                 <th>Stock sistema</th>
-                <th>Cantidad contada</th>
+                <th :class="{ 'count-column-highlight': canEdit }">Cantidad contada</th>
                 <th>Diferencia</th>
                 <th>Notas</th>
                 <th v-if="canEdit">Acciones</th>
@@ -1067,7 +1139,13 @@ const recentHistory = computed(() => {
                 <td>{{ safeNumber(line.system_stock) ?? '-' }}</td>
                 <td>
                   <template v-if="canEdit">
-                    <input v-model.number="(line as any).counted_stock" type="number" min="0" style="width: 120px" />
+                    <input
+                      v-model.number="(line as any).counted_stock"
+                      type="number"
+                      min="0"
+                      class="table-count-input"
+                      :class="{ 'count-field-highlight': canEdit && !isCounted(line) }"
+                    />
                   </template>
                   <template v-else>
                     {{ line.counted_stock ?? '-' }}
@@ -1149,6 +1227,10 @@ const recentHistory = computed(() => {
           Sin diferencias: no hay solicitudes por generar.
         </div>
 
+        <p v-if="!canCreateRequests" class="muted small" style="margin-top: 0.75rem">
+          No tienes permiso para generar solicitudes de ajuste.
+        </p>
+
         <div v-else class="summary-lists">
           <div class="summary-list">
             <h4>De más</h4>
@@ -1179,7 +1261,7 @@ const recentHistory = computed(() => {
         <button class="btn ghost" @click="showSummaryModal = false">Cerrar</button>
         <button
           class="btn"
-          :disabled="creatingRequests || differenceRows.length === 0"
+          :disabled="creatingRequests || differenceRows.length === 0 || !canCreateRequests"
           @click="createAdjustmentRequests"
         >
           {{ creatingRequests ? 'Creando...' : 'Crear solicitud(es) de ajuste' }}
@@ -1239,6 +1321,17 @@ const recentHistory = computed(() => {
   align-items: stretch;
   justify-content: space-between;
   flex-wrap: wrap;
+}
+
+.count-entry-hint {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.86rem;
+  line-height: 1.35;
 }
 
 .mode-tabs {
@@ -2021,6 +2114,12 @@ const recentHistory = computed(() => {
   overflow: hidden;
 }
 
+.count-target-box {
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #eff6ff, #dbeafe);
+}
+
 .stepper-btn {
   padding: 0 1rem;
   background: white;
@@ -2052,6 +2151,22 @@ const recentHistory = computed(() => {
 .stepper-input:focus {
   ring: 0;
   outline: none;
+}
+
+.table-count-input {
+  width: 120px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.count-field-highlight {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  background: #eff6ff !important;
+}
+
+.count-column-highlight {
+  color: #1d4ed8;
 }
 
 .notes-section label {

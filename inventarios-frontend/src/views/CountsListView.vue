@@ -533,7 +533,7 @@ const loadModalHistory = async (codes?: string[]) => {
       item_codes: items,
       from,
       to,
-      almacen: 1 // Fixed warehouse for history lookup
+      almacen: Number(newCountForm.almacen) || 1
     })
     const map: Record<string, { last_counted_at: string; folio?: string; count_id?: number }> = {}
     if (Array.isArray(resp?.items)) {
