@@ -186,8 +186,7 @@ const startServer = async (): Promise<void> => {
       logger.info('WebSocket server disabled')
     }
 
-    // Iniciar servidor
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, '0.0.0.0', () => {
       logger.info(`🚀 Server running on http://localhost:${PORT}`)
       logger.info(`📊 Health check: http://localhost:${PORT}/health`)
       if (wsEnabled) {
