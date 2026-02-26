@@ -37,7 +37,6 @@ import testDataRoutes from './routes/test-data.routes'
 // Constantes
 const PORT = parseInt(process.env.PORT || '3000')
 const NODE_ENV = process.env.NODE_ENV || 'development'
-const CORS_ORIGIN = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : ['http://localhost:5173']
 
 /**
  * Inicializa la aplicación Express
@@ -49,7 +48,7 @@ const createApp = (): Application => {
   app.use(helmet())
   app.use(compression())
   app.use(cors({
-    origin: CORS_ORIGIN,
+    origin: true, // Accepts any origin dynamically
     credentials: true
   }))
   app.use(express.json({ limit: '10mb' }))

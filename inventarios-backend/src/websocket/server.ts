@@ -11,7 +11,7 @@ let io: SocketIOServer | null = null
 export const initializeWebSocket = (httpServer: HTTPServer): SocketIOServer => {
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : ['http://localhost:5173'],
+      origin: true,
       methods: ['GET', 'POST'],
       credentials: true
     },
