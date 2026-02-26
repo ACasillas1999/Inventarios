@@ -5,12 +5,6 @@ import { logger } from '../utils/logger'
  * Integrado con API de Meta
  */
 
-interface WhatsAppMessage {
-    to: string
-    templateName: string
-    templateParams: any[]
-}
-
 interface CountAlertData {
     folio: string
     branchName: string

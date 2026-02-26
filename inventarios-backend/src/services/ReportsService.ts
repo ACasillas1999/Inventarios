@@ -174,7 +174,7 @@ export class ReportsService {
                     JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
                     JOIN almacenes alm ON aa.Almacen = alm.Almacen
                     WHERE alm.Habilitado = 1
-                `
+                `;
                 let remoteCount: any;
                 try {
                     [remoteCount] = await cm.executeQuery<any>(branch.id, query)
@@ -185,7 +185,7 @@ export class ReportsService {
                             FROM articulo a
                             JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
                             JOIN almacenes alm ON aa.Almacen = alm.Almacen
-                        `
+                        `;
                         [remoteCount] = await cm.executeQuery<any>(branch.id, query)
                     } else {
                         throw err

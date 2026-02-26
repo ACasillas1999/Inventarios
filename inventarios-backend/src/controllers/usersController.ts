@@ -5,7 +5,7 @@ import { logger } from '../utils/logger'
 
 const usersService = new UsersService()
 
-export const listUsers = async (req: AuthRequest, res: Response): Promise<void> => {
+export const listUsers = async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
     const users = await usersService.getAll()
     res.json(users)
