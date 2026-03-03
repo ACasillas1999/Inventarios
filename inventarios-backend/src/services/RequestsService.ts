@@ -75,12 +75,14 @@ export class RequestsService {
     status?: RequestStatus
     statuses?: RequestStatus[]
     branch_id?: number
+    branch_ids?: number[]
     count_id?: number
+    surtidor_id?: number
     limit?: number
     offset?: number
   }): Promise<{ requests: RequestRow[]; total: number }> {
     let query = `${requestSelectQuery} WHERE 1=1`
-    let countQuery = 'SELECT COUNT(*) as total FROM requests r WHERE 1=1'
+    let countQuery = 'SELECT COUNT(*) as total FROM requests r LEFT JOIN counts c ON r.count_id = c.id WHERE 1=1'
     const params: any[] = []
 
     const statusFilters =
@@ -103,10 +105,28 @@ export class RequestsService {
       params.push(filters.branch_id)
     }
 
+    if (filters.branch_ids !== undefined) {
+      if (filters.branch_ids.length > 0) {
+        const placeholders = filters.branch_ids.map(() => '?').join(', ')
+        query += ` AND r.branch_id IN (${placeholders})`
+        countQuery += ` AND r.branch_id IN (${placeholders})`
+        params.push(...filters.branch_ids)
+      } else {
+        query += ` AND 1 = 0`
+        countQuery += ` AND 1 = 0`
+      }
+    }
+
     if (filters.count_id) {
       query += ' AND r.count_id = ?'
       countQuery += ' AND r.count_id = ?'
       params.push(filters.count_id)
+    }
+
+    if (filters.surtidor_id) {
+      query += ' AND c.responsible_user_id = ?'
+      countQuery += ' AND c.responsible_user_id = ?'
+      params.push(filters.surtidor_id)
     }
 
     query += ' ORDER BY r.created_at DESC'

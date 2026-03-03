@@ -2,6 +2,7 @@ import { Response } from 'express'
 import { AuthRequest } from '../middlewares/auth'
 import RequestsService, { type RequestStatus } from '../services/RequestsService'
 import { logger } from '../utils/logger'
+import { getLocalPool } from '../config/database'
 
 const requestsService = new RequestsService()
 
@@ -44,11 +45,28 @@ export const listRequests = async (req: AuthRequest, res: Response): Promise<voi
     const limit = parseNumber(req.query.limit)
     const offset = parseNumber(req.query.offset)
 
+    const userId = req.user?.id
+    const roleId = req.user?.role_id
+
+    if (!userId || !roleId) {
+      res.status(401).json({ error: 'Not authenticated' })
+      return
+    }
+
+    let branch_ids: number[] | undefined = undefined
+    if (roleId === 2) {
+      const pool = getLocalPool()
+      const [rows] = await pool.execute('SELECT branch_id FROM user_branches WHERE user_id = ?', [userId])
+      branch_ids = (rows as any[]).map(r => r.branch_id)
+    }
+
     const result = await requestsService.listRequests({
       status,
       statuses: statuses.length > 1 ? statuses : undefined,
       branch_id,
+      branch_ids,
       count_id,
+      surtidor_id: roleId === 4 ? userId : undefined,
       limit,
       offset
     })

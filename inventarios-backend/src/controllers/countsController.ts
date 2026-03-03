@@ -3,6 +3,7 @@ import { AuthRequest } from '../middlewares/auth'
 import CountsService from '../services/CountsService'
 import { logger } from '../utils/logger'
 import { CreateCountRequest, UpdateCountRequest, CreateCountDetailRequest } from '../types'
+import { getLocalPool } from '../config/database'
 
 const countsService = new CountsService()
 
@@ -131,6 +132,14 @@ export const getCountByFolio = async (req: AuthRequest, res: Response): Promise<
  */
 export const listCounts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const userId = req.user?.id
+    const roleId = req.user?.role_id
+
+    if (!userId || !roleId) {
+      res.status(401).json({ error: 'Not authenticated' })
+      return
+    }
+
     const allowedStatuses = ['pendiente', 'contando', 'contado', 'cerrado', 'cancelado']
     const rawStatus = req.query.status
     const statusValues =
@@ -146,15 +155,23 @@ export const listCounts = async (req: AuthRequest, res: Response): Promise<void>
       return
     }
 
+    let branch_ids: number[] | undefined = undefined
+    if (roleId === 2) {
+      const pool = getLocalPool()
+      const [rows] = await pool.execute('SELECT branch_id FROM user_branches WHERE user_id = ?', [userId])
+      branch_ids = (rows as any[]).map(r => r.branch_id)
+    }
+
     const filters = {
       branch_id: req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined,
       status: statusValues.length === 1 ? statusValues[0] : undefined,
       statuses: statusValues.length > 1 ? statusValues : undefined,
       type: req.query.type as string | undefined,
       classification: req.query.classification as string | undefined,
-      responsible_user_id: req.query.responsible_user_id
-        ? parseInt(req.query.responsible_user_id as string)
-        : undefined,
+      branch_ids,
+      responsible_user_id: roleId === 4
+        ? userId
+        : (req.query.responsible_user_id ? parseInt(req.query.responsible_user_id as string) : undefined),
       date_from: req.query.date_from as string | undefined,
       date_to: req.query.date_to as string | undefined,
       scheduled_from: req.query.scheduled_from as string | undefined,

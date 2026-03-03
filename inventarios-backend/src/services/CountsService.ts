@@ -966,6 +966,7 @@ export class CountsService {
    */
   async listCounts(filters: {
     branch_id?: number
+    branch_ids?: number[]
     status?: string
     statuses?: string[]
     type?: string
@@ -997,6 +998,18 @@ export class CountsService {
       query += ' AND c.branch_id = ?'
       countQuery += ' AND c.branch_id = ?'
       filterParams.push(filters.branch_id)
+    }
+
+    if (filters.branch_ids !== undefined) {
+      if (filters.branch_ids.length > 0) {
+        const placeholders = filters.branch_ids.map(() => '?').join(', ')
+        query += ` AND c.branch_id IN (${placeholders})`
+        countQuery += ` AND c.branch_id IN (${placeholders})`
+        filterParams.push(...filters.branch_ids)
+      } else {
+        query += ` AND 1 = 0`
+        countQuery += ` AND 1 = 0`
+      }
     }
 
     const statusFilters =
