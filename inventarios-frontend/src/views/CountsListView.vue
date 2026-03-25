@@ -328,9 +328,9 @@ const openNewCountModal = () => {
   if (isGerenteRole.value) {
     newCountForm.classification = 'ajuste'
     if (connectedBranches.value.length === 1) {
-      newCountForm.branch_id = connectedBranches.value[0].id.toString()
+      newCountForm.branch_id = connectedBranches.value[0]?.id.toString() || ''
     } else if (authStore.user?.branches?.length) {
-      newCountForm.branch_id = authStore.user.branches[0].id.toString()
+      newCountForm.branch_id = authStore.user.branches[0]?.id.toString() || ''
     }
   }
 }
