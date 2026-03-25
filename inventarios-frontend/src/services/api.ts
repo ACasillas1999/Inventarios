@@ -377,7 +377,7 @@ export interface Count {
   branch_id: number
   almacen: number
   type: 'ciclico' | 'por_familia' | 'por_zona' | 'rango' | 'total'
-  classification: 'inventario' | 'ajuste'
+  classification: 'inventario' | 'ajuste' | 'migracion'
   priority: 'baja' | 'media' | 'alta' | 'urgente'
   status: 'pendiente' | 'contando' | 'contado' | 'cerrado' | 'cancelado'
   responsible_user_id: number
@@ -404,7 +404,7 @@ export const countsService = {
     branch_id: number
     almacen?: number
     type: string
-    classification?: 'inventario' | 'ajuste'
+    classification?: 'inventario' | 'ajuste' | 'migracion'
     priority?: string
     responsible_user_id: number
     scheduled_date?: string
@@ -559,7 +559,7 @@ export interface AdjustmentRequest {
   difference: number
   status: RequestStatus
   count_folio?: string
-  count_classification?: 'inventario' | 'ajuste'
+  count_classification?: 'inventario' | 'ajuste' | 'migracion'
   warehouse_id?: number
   warehouse_name?: string
   requested_by_user_id: number

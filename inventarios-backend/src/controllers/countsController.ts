@@ -26,6 +26,23 @@ export const createCount = async (req: AuthRequest, res: Response): Promise<void
       return
     }
 
+    const roleId = req.user?.role_id
+    if (roleId) {
+      const [roleRows] = await getLocalPool().query('SELECT name FROM roles WHERE id = ?', [roleId]) as any
+      const roleName = roleRows[0]?.name || ''
+      if (roleName === 'gerente' || roleName === 'auxiliar_gerente') {
+        if (data.classification === 'inventario' || !data.classification) {
+          res.status(403).json({ error: 'Permisos insuficientes para crear conteos de inventario' })
+          return
+        }
+        const [branchRows] = await getLocalPool().query('SELECT branch_id FROM user_branches WHERE user_id = ? AND branch_id = ?', [userId, data.branch_id]) as any
+        if (branchRows.length === 0) {
+          res.status(403).json({ error: 'No tienes permisos para operar en esta sucursal' })
+          return
+        }
+      }
+    }
+
     const counts = await countsService.createCount(userId, data)
 
     res.status(201).json({

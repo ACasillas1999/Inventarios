@@ -126,6 +126,19 @@ const initializeDatabases = async (): Promise<void> => {
     await localPool.query('SELECT 1')
     logger.info('Local database connected successfully')
 
+    try {
+      await localPool.query("ALTER TABLE counts MODIFY COLUMN classification ENUM('inventario', 'ajuste', 'migracion') NOT NULL DEFAULT 'inventario'")
+      logger.info('Migration for classification ENUM executed successfully')
+      
+      const rolesSql = `INSERT IGNORE INTO roles (name, display_name, description, permissions, created_at, updated_at) VALUES 
+        ('gerente', 'Gerente', 'Gerente de sucursal', '["counts.view", "counts.create"]', NOW(), NOW()),
+        ('auxiliar_gerente', 'Auxiliar de Gerente', 'Auxiliar de gerente de sucursal', '["counts.view", "counts.create"]', NOW(), NOW())`;
+      await localPool.query(rolesSql)
+      logger.info('Roles migration for Gerente and Auxiliar executed successfully')
+    } catch (err: any) {
+      logger.warn('Migration warning:', err.message)
+    }
+
     // Inicializar conexiones a sucursales
     const branchDatabases = await getBranchDatabases()
     if (branchDatabases.length === 0) {

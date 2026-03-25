@@ -336,7 +336,7 @@ export class CountsService {
           req.item_code,
           req.difference,
           userName,
-          'count'
+          count.classification === 'migracion' ? 'migracion' : (count.classification === 'ajuste' ? 'direct' : 'count')
         )
 
         // Find the folio for this request from the folios array generated earlier
@@ -439,7 +439,7 @@ export class CountsService {
     let itemsToCount: string[] = []
     let itemsDataMap = new Map<string, number>()
 
-    if (data.classification === 'ajuste' && data.items_data?.length) {
+    if ((data.classification === 'ajuste' || data.classification === 'migracion') && data.items_data?.length) {
       // Direct adjustment flow
       itemsToCount = data.items_data.map(i => i.item_code)
       data.items_data.forEach(i => itemsDataMap.set(i.item_code, i.count))
@@ -533,7 +533,7 @@ export class CountsService {
     const conn = await this.pool.getConnection()
 
     // Determine status: if direct adjustment, set to 'cerrado'
-    const isDirectAdjustment = data.classification === 'ajuste' && itemsDataMap.size > 0
+    const isDirectAdjustment = (data.classification === 'ajuste' || data.classification === 'migracion') && itemsDataMap.size > 0
     const initialStatus = isDirectAdjustment ? 'cerrado' : 'pendiente'
     const now = new Date()
 
@@ -576,7 +576,7 @@ export class CountsService {
         const insertId = result.insertId
         createdCountIds.push(insertId)
 
-        if (data.classification === 'ajuste' && itemsDataMap.has(item)) {
+        if ((data.classification === 'ajuste' || data.classification === 'migracion') && itemsDataMap.has(item)) {
           // Direct adjustment: Create detail with counted stock
           const countedStock = itemsDataMap.get(item)!
           await this.seedCountDetailsWithValues(conn, insertId, data.branch_id, item, selectedWarehouse, countedStock)

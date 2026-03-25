@@ -726,8 +726,8 @@ onBeforeUnmount(() => {
                   >
                     {{ row.count_folio || `#${row.count_id}` }}
                   </router-link>
-                  <span v-if="row.count_classification" :class="['tag', row.count_classification === 'ajuste' ? 'accent' : '']" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">
-                    {{ row.count_classification === 'ajuste' ? 'Ajuste directo' : 'Conteo normal' }}
+                  <span v-if="row.count_classification" :class="['tag', row.count_classification === 'ajuste' || row.count_classification === 'migracion' ? 'accent' : '']" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">
+                    {{ row.count_classification === 'ajuste' ? 'Ajuste directo' : (row.count_classification === 'migracion' ? 'Migración' : 'Conteo normal') }}
                   </span>
                 </div>
               </td>

@@ -50,7 +50,7 @@ export type RequestRow = {
   evidence_file: string | null
   warehouse_id?: number
   warehouse_name?: string
-  count_classification?: 'inventario' | 'ajuste'
+  count_classification?: 'inventario' | 'ajuste' | 'migracion'
   requested_by_name?: string | null
   reviewed_by_name?: string | null
   created_at: string

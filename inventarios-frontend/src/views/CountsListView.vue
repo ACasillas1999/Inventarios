@@ -20,7 +20,19 @@ const router = useRouter()
 const EMPTY_LINE_VALUE = '__EMPTY__'
 
 const branches = ref<Branch[]>([])
-const connectedBranches = computed(() => branches.value.filter(b => b.status === 'connected'))
+const isGerenteRole = computed(() => {
+  const role = authStore.user?.role_name || ''
+  return role === 'gerente' || role === 'auxiliar_gerente'
+})
+
+const connectedBranches = computed(() => {
+  const allConnected = branches.value.filter(b => b.status === 'connected')
+  if (isGerenteRole.value && authStore.user?.branches) {
+    const userBranchIds = authStore.user.branches.map(b => b.id)
+    return allConnected.filter(b => userBranchIds.includes(b.id))
+  }
+  return allConnected
+})
 const counts = ref<Count[]>([])
 const total = ref(0)
 const loading = ref(true)
@@ -256,7 +268,8 @@ const typeLabel: Record<string, string> = {
 
 const classificationLabel: Record<string, string> = {
   inventario: 'Inventario',
-  ajuste: 'Ajuste'
+  ajuste: 'Ajuste',
+  migracion: 'Migración'
 }
 
 const almacenLabel = (almacen: number | undefined) => {
@@ -312,6 +325,14 @@ const loadUsers = async () => {
 
 const openNewCountModal = () => {
   showNewCountModal.value = true
+  if (isGerenteRole.value) {
+    newCountForm.classification = 'ajuste'
+    if (connectedBranches.value.length === 1) {
+      newCountForm.branch_id = connectedBranches.value[0].id.toString()
+    } else if (authStore.user?.branches?.length) {
+      newCountForm.branch_id = authStore.user.branches[0].id.toString()
+    }
+  }
 }
 
 const closeNewCountModal = () => {
@@ -609,11 +630,12 @@ const selectModalLine = async (value: string) => {
 
 const createCount = async () => {
   try {
-    if (!newCountForm.branch_id || !newCountForm.responsible_user_id) {
+    const notesTrimmed = typeof newCountForm.notes === 'string' ? newCountForm.notes.trim() : ''
+    if (!newCountForm.branch_id || !newCountForm.responsible_user_id || !notesTrimmed) {
       Swal.fire({
         icon: 'warning',
         title: 'Campos requeridos',
-        text: 'Por favor completa todos los campos requeridos',
+        text: 'Por favor completa todos los campos requeridos, incluyendo las observaciones.',
         confirmButtonText: 'Entendido'
       })
       return
@@ -648,7 +670,7 @@ const createCount = async () => {
     let finalItems = items
 
     let itemsData: Array<{ item_code: string; count: number }> | undefined = undefined
-    if (newCountForm.classification === 'ajuste' && !selectAllFromLine.value) {
+    if ((newCountForm.classification === 'ajuste' || newCountForm.classification === 'migracion') && !selectAllFromLine.value) {
        itemsData = []
        for (const code of finalItems) {
          const qty = modalAdjustmentQuantities.value[code]
@@ -1346,7 +1368,7 @@ watch(counts, (newCounts) => {
             <div class="count-card-details">
               <div class="count-detail-item">
                 <span class="detail-label">CLASIFICACIÓN</span>
-                <span class="detail-value" :style="{ color: count.classification === 'ajuste' ? 'var(--accent)' : 'inherit' }">
+                <span class="detail-value" :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
                   {{ classificationLabel[count.classification] || count.classification }}
                 </span>
               </div>
@@ -1503,7 +1525,7 @@ watch(counts, (newCounts) => {
                   <span v-else class="muted">Almacén {{ count.almacen || 1 }}</span>
                 </td>
                 <td data-label="Clasificación">
-                  <strong :style="{ color: count.classification === 'ajuste' ? 'var(--accent)' : 'inherit' }">
+                  <strong :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
                     {{ classificationLabel[count.classification] || count.classification }}
                   </strong>
                 </td>
@@ -1577,7 +1599,7 @@ watch(counts, (newCounts) => {
                   </td>
                   <td>{{ branchNameById.get(count.branch_id) || `ID ${count.branch_id}` }}</td>
                   <td>
-                    <strong :style="{ color: count.classification === 'ajuste' ? 'var(--accent)' : 'inherit' }">
+                    <strong :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
                       {{ classificationLabel[count.classification] || count.classification }}
                     </strong>
                   </td>
@@ -1670,7 +1692,7 @@ watch(counts, (newCounts) => {
         <div class="form-grid">
           <div>
             <label for="modal-branch">Sucursal *</label>
-            <select id="modal-branch" v-model="newCountForm.branch_id" required>
+            <select id="modal-branch" v-model="newCountForm.branch_id" :disabled="isGerenteRole && connectedBranches.length <= 1" required>
               <option value="">Selecciona una sucursal</option>
               <option v-for="branch in connectedBranches" :key="branch.id ?? branch.code" :value="branch.id">
                 {{ branch.name }}
@@ -1699,8 +1721,9 @@ watch(counts, (newCounts) => {
           <div>
             <label for="modal-classification">Clasificación *</label>
             <select id="modal-classification" v-model="newCountForm.classification" required>
-              <option value="inventario">Inventario</option>
+              <option v-if="!isGerenteRole" value="inventario">Inventario</option>
               <option value="ajuste">Ajuste</option>
+              <option value="migracion">Migración</option>
             </select>
           </div>
           <div>
@@ -1720,6 +1743,15 @@ watch(counts, (newCounts) => {
                 {{ user.name }} {{ user.role_name ? ` - [${user.role_name}]` : '' }}
               </option>
             </select>
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label for="modal-notes">Observaciones *</label>
+            <textarea
+              id="modal-notes"
+              v-model="newCountForm.notes"
+              placeholder="Observaciones adicionales..."
+              required
+            ></textarea>
           </div>
           <div>
             <label for="modal-date">Fecha programada</label>
@@ -1871,7 +1903,7 @@ watch(counts, (newCounts) => {
                   </div>
                 </label>
 
-                <div v-if="newCountForm.classification === 'ajuste' && (selectedItemCodes.has(it.codigo) || selectAllFromLine)" class="adj-qty">
+                <div v-if="(newCountForm.classification === 'ajuste' || newCountForm.classification === 'migracion') && (selectedItemCodes.has(it.codigo) || selectAllFromLine)" class="adj-qty">
                    <input 
                       type="number" 
                       placeholder="Cant."
@@ -1894,14 +1926,7 @@ watch(counts, (newCounts) => {
           </div>
         </div>
 
-        <div style="margin-top: 0.75rem">
-          <label for="modal-notes">Notas</label>
-          <textarea
-            id="modal-notes"
-            v-model="newCountForm.notes"
-            placeholder="Observaciones adicionales..."
-          ></textarea>
-        </div>
+
       </div>
       <div class="modal-footer">
         <button class="btn ghost" @click="closeNewCountModal">Cancelar</button>

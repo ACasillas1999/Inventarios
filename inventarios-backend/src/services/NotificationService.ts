@@ -106,7 +106,7 @@ export class NotificationService {
         itemCode: string,
         difference: number,
         userName: string,
-        type: 'count' | 'direct' = 'count'
+        type: 'count' | 'direct' | 'migracion' = 'count'
     ): Promise<void> {
         const subscribers = await this.getSubscribers('request_created', branchId)
 
@@ -119,7 +119,7 @@ export class NotificationService {
                         { type: "text", text: itemCode },
                         { type: "text", text: String(difference) },
                         { type: "text", text: userName },
-                        { type: "text", text: type === 'count' ? `Conteo ${folio}` : 'Directo' }
+                        { type: "text", text: type === 'count' ? `Conteo ${folio}` : (type === 'migracion' ? 'Migración' : 'Ajuste Directo') }
                     ]
                 }
             ]
