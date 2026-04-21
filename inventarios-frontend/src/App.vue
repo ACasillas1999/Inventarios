@@ -121,6 +121,12 @@ const navSections = computed(() => [
         to: '/reportes/cobertura',
         icon: IconChartBar,
       },
+      {
+        label: 'Detalle de Diferencias',
+        to: '/reportes/detalles-diferencias',
+        icon: IconListDetails,
+      },
+
     ],
   },
   {

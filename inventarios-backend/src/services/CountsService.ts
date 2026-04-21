@@ -1799,31 +1799,146 @@ export class CountsService {
   }
 
   /**
-   * Lista diferencias registradas en detalles de conteo
+   * Lista diferencias registradas en detalles de conteo con filtros y paginación
    */
-  async listDifferences(): Promise<
-    Array<
-      CountDetail & {
-        folio: string
-        branch_id: number
+  async listDifferences(filters: {
+    branch_id?: number;
+    linea?: string;
+    item_code?: string;
+    responsible_user_id?: number;
+    date_from?: string;
+    date_to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ data: any[]; total: number; statsByBranch: any[] }> {
+    try {
+      let baseQuery = `
+        FROM count_details cd
+        INNER JOIN counts c ON c.id = cd.count_id
+        LEFT JOIN users u ON c.responsible_user_id = u.id
+        WHERE cd.counted_stock IS NOT NULL
+          AND cd.counted_stock != cd.system_stock
+      `
+      const params: any[] = []
+
+      if (filters.branch_id) {
+        baseQuery += ' AND c.branch_id = ?'
+        params.push(filters.branch_id)
       }
-    >
-  > {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
+
+      if (filters.linea) {
+        baseQuery += ' AND cd.item_code LIKE ?'
+        params.push(`${filters.linea}%`)
+      }
+
+      if (filters.item_code) {
+        baseQuery += ' AND cd.item_code LIKE ?'
+        params.push(`%${filters.item_code}%`)
+      }
+
+      if (filters.responsible_user_id) {
+        baseQuery += ' AND c.responsible_user_id = ?'
+        params.push(filters.responsible_user_id)
+      }
+
+      if (filters.date_from) {
+        baseQuery += ' AND cd.updated_at >= ?'
+        params.push(filters.date_from)
+      }
+
+      if (filters.date_to) {
+        baseQuery += ' AND cd.updated_at <= ?'
+        params.push(filters.date_to)
+      }
+
+      // 1. Obtener total
+      const [countRows] = await this.pool.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) as total ${baseQuery}`,
+        params
+      )
+      const total = Number(countRows[0]?.total || 0)
+      
+      console.log(`[listDifferences] Filters:`, filters)
+      console.log(`[listDifferences] Total found: ${total}`)
+
+      // 2. Obtener estadísticas para gráficos (filtros aplicados)
+      const [statsBranchRows] = await this.pool.execute<RowDataPacket[]>(
+        `SELECT c.branch_id, COUNT(*) as count ${baseQuery} GROUP BY c.branch_id ORDER BY count DESC`,
+        params
+      )
+
+      const [statsLineRows] = await this.pool.execute<RowDataPacket[]>(
+        `SELECT IFNULL(LEFT(cd.item_code, 5), 'N/A') as linea_prefix, COUNT(*) as count ${baseQuery} GROUP BY LEFT(cd.item_code, 5) ORDER BY count DESC LIMIT 10`,
+        params
+      )
+
+      const [statsUserRows] = await this.pool.execute<RowDataPacket[]>(
+        `SELECT 
+          IFNULL(u.name, 'Sin asignar') as user_name, 
+          u.id as user_id,
+          COUNT(*) as count,
+          AVG(TIMESTAMPDIFF(MINUTE, c.assigned_at, c.finished_at)) as avg_res_time
+         ${baseQuery} 
+         GROUP BY u.id, u.name 
+         ORDER BY count DESC 
+         LIMIT 10`,
+        params
+      )
+
+      // 3. Estadísticas específicas (Almacén y Artículos Críticos)
+      const [statsWarehouseRows] = await this.pool.execute<RowDataPacket[]>(
+        `SELECT IFNULL(c.almacen, 0) as warehouse_id, COUNT(*) as count ${baseQuery} GROUP BY c.almacen ORDER BY count DESC`,
+        params
+      )
+
+      const [topItemsRows] = await this.pool.execute<RowDataPacket[]>(
+        `SELECT cd.item_code, cd.item_description, COUNT(*) as count ${baseQuery} GROUP BY cd.item_code, cd.item_description ORDER BY count DESC LIMIT 10`,
+        params
+      )
+
+      console.log(`[listDifferences] Stats: Branch(${statsBranchRows.length}) Line(${statsLineRows.length}) User(${statsUserRows.length}) Warehouse(${statsWarehouseRows.length}) Items(${topItemsRows.length})`)
+
+      // 4. Obtener datos paginados
+
+      let dataQuery = `
+        SELECT 
+          cd.*, 
+          c.folio, 
+          c.branch_id, 
+          u.name as responsible_name 
+        ${baseQuery} 
+        ORDER BY cd.updated_at DESC
       `
-      SELECT
-        cd.*,
-        c.folio,
-        c.branch_id
-      FROM count_details cd
-      INNER JOIN counts c ON c.id = cd.count_id
-      WHERE cd.counted_stock IS NOT NULL
-        AND cd.counted_stock != cd.system_stock
-      ORDER BY cd.updated_at DESC
-      `
-    )
-    return rows as any
+      
+      const limit = Number(filters.limit) || 50
+      const offset = Number(filters.offset) || 0
+      dataQuery += ' LIMIT ? OFFSET ?'
+      
+      const [rows] = await this.pool.execute<RowDataPacket[]>(
+        dataQuery, 
+        [...params, limit, offset]
+      )
+
+      return {
+        data: rows as any[],
+        total,
+        statsByBranch: statsBranchRows as any[],
+        statsByLine: statsLineRows as any[],
+        statsByUser: statsUserRows as any[],
+        statsByWarehouse: statsWarehouseRows as any[],
+        topItems: topItemsRows as any[]
+      }
+
+
+    } catch (err) {
+      logger.error('Error in listDifferences service:', err)
+      return { data: [], total: 0, statsByBranch: [] }
+    }
   }
+
+
+
+
 }
 
 export default CountsService

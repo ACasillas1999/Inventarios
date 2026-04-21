@@ -14,6 +14,7 @@ import SpecialLinesView from '@/views/SpecialLinesView.vue'
 import UsersView from '@/views/UsersView.vue'
 import WarehousesView from '@/views/WarehousesView.vue'
 import CoverageReportView from '@/views/CoverageReportView.vue'
+import DifferencesDetailView from '@/views/DifferencesDetailView.vue'
 import TestDataView from '@/views/TestDataView.vue'
 
 const router = createRouter({
@@ -94,6 +95,12 @@ const router = createRouter({
       name: 'reportes-cobertura',
       component: CoverageReportView,
       meta: { title: 'Cobertura de Inventarios', section: 'Reportes' },
+    },
+    {
+      path: '/reportes/detalles-diferencias',
+      name: 'reportes-diferencias',
+      component: DifferencesDetailView,
+      meta: { title: 'Detalle de Diferencias', section: 'Reportes' },
     },
     {
       path: '/lineas-especiales',

@@ -71,12 +71,13 @@ const loadCounts = async () => {
 
 const loadDiffs = async () => {
   try {
-    const data = await countsService.getDifferences()
-    diffs.value = Array.isArray(data) ? data : []
+    const response = await countsService.getDifferences()
+    diffs.value = Array.isArray(response?.data) ? response.data : []
   } catch (err) {
     console.error('Error loading differences', err)
   }
 }
+
 
 const loadKPIs = async () => {
     try {

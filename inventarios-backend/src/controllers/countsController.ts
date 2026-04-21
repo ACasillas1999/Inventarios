@@ -399,15 +399,30 @@ export const getDashboardStats = async (_req: AuthRequest, res: Response): Promi
  * Lista diferencias de conteos
  * GET /api/counts/differences
  */
-export const listDifferences = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const listDifferences = async (req: AuthRequest, res: Response): Promise<void> => {
+  console.log('API Request: GET /api/counts/differences', req.query);
   try {
-    const diffs = await countsService.listDifferences()
-    res.json(diffs)
+
+    const filters = {
+      branch_id: req.query.branch_id && req.query.branch_id !== '' ? parseInt(req.query.branch_id as string) : undefined,
+      linea: req.query.linea as string || undefined,
+      item_code: req.query.item_code as string || undefined,
+      responsible_user_id: req.query.responsible_user_id && req.query.responsible_user_id !== '' ? parseInt(req.query.responsible_user_id as string) : undefined,
+      date_from: req.query.date_from && req.query.date_from !== '' ? req.query.date_from as string : undefined,
+      date_to: req.query.date_to && req.query.date_to !== '' ? req.query.date_to as string : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
+      offset: req.query.offset ? parseInt(req.query.offset as string) : 0
+    }
+
+
+    const result = await countsService.listDifferences(filters)
+    res.json(result)
   } catch (error) {
     logger.error('List differences error:', error)
     res.status(500).json({ error: 'Failed to list differences' })
   }
 }
+
 
 /**
  * Elimina un conteo
