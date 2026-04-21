@@ -513,21 +513,9 @@ export const countsService = {
     return response.data
   },
 
-  getDifferences: async (filters: any = {}) => {
-    const params = new URLSearchParams()
-    if (filters.branch_id) params.append('branch_id', String(filters.branch_id))
-    if (filters.linea) params.append('linea', filters.linea)
-    if (filters.item_code) params.append('item_code', filters.item_code)
-    if (filters.responsible_user_id) params.append('responsible_user_id', String(filters.responsible_user_id))
-    if (filters.date_from) params.append('date_from', filters.date_from)
-    if (filters.date_to) params.append('date_to', filters.date_to)
-    if (filters.limit) params.append('limit', String(filters.limit))
-    if (filters.offset) params.append('offset', String(filters.offset))
-
-    const query = params.toString()
-    const url = query ? `/counts/differences?${query}` : '/counts/differences'
-    const res = await api.get(url)
-    return res.data
+  getDifferences: async () => {
+    const response = await api.get('/counts/differences')
+    return response.data
   },
 
   createRequestsFromCount: async (countId: number) => {
