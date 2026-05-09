@@ -14,7 +14,8 @@ const loadingMessage = ref('Cargando datos...')
 const filters = reactive({
   branch_id: '',
   date_from: '',
-  date_to: ''
+  date_to: '',
+  only_active: true
 })
 
 const branches = ref<any[]>([])
@@ -25,11 +26,11 @@ const fetchData = async () => {
   try {
     // Load sequentially to show progress
     loadingMessage.value = 'Cargando vista general de la empresa...'
-    const overview = await reportsService.getCompanyOverview()
+    const overview = await reportsService.getCompanyOverview(filters.only_active)
     companyOverview.value = overview
     
     loadingMessage.value = 'Calculando cobertura por sucursal...'
-    const coverage = await reportsService.getCoverageReport(filters.branch_id ? Number(filters.branch_id) : undefined)
+    const coverage = await reportsService.getCoverageReport(filters.branch_id ? Number(filters.branch_id) : undefined, filters.only_active)
     coverageData.value = coverage
     
     loadingMessage.value = 'Obteniendo estadísticas de líneas...'
@@ -126,6 +127,12 @@ onMounted(() => {
         <div>
           <label>Hasta</label>
           <input type="date" v-model="filters.date_to" @change="fetchData" />
+        </div>
+        <div class="checkbox-filter">
+          <label>
+            <input type="checkbox" v-model="filters.only_active" @change="fetchData" />
+            Solo activos
+          </label>
         </div>
         <div class="filter-actions">
           <button class="btn" @click="fetchData">Actualizar</button>
@@ -256,6 +263,28 @@ onMounted(() => {
   .panel-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.checkbox-filter {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.checkbox-filter label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  margin-bottom: 0;
+  font-weight: 500;
+}
+
+.checkbox-filter input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .stat-card {

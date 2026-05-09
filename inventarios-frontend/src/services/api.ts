@@ -702,14 +702,19 @@ export const reportsService = {
     const response = await api.get(`/reports/audit?${params.toString()}`)
     return response.data
   },
-  getCompanyOverview: async () => {
-    const response = await api.get('/reports/company-overview', {
+  getCompanyOverview: async (onlyActive?: boolean) => {
+    const url = onlyActive ? '/reports/company-overview?only_active=true' : '/reports/company-overview'
+    const response = await api.get(url, {
       timeout: STOCK_TIMEOUT_MS // 60 seconds for large company-wide calculations
     })
     return response.data
   },
-  getCoverageReport: async (branchId?: number) => {
-    const url = branchId ? `/reports/coverage?branch_id=${branchId}` : '/reports/coverage'
+  getCoverageReport: async (branchId?: number, onlyActive?: boolean) => {
+    const params = new URLSearchParams()
+    if (branchId) params.append('branch_id', branchId.toString())
+    if (onlyActive) params.append('only_active', 'true')
+    
+    const url = params.toString() ? `/reports/coverage?${params.toString()}` : '/reports/coverage'
     const response = await api.get(url, {
       timeout: STOCK_TIMEOUT_MS // 60 seconds for coverage calculations
     })

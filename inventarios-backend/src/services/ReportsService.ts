@@ -157,7 +157,7 @@ export class ReportsService {
     /**
      * Obtiene una vista general de la empresa
      */
-    async getCompanyOverview(): Promise<CompanyOverview> {
+    async getCompanyOverview(filters?: { only_active?: boolean }): Promise<CompanyOverview> {
         const cm = ConnectionManager.getInstance()
         const branches = cm.getAllBranchConfigs()
 
@@ -175,6 +175,8 @@ export class ReportsService {
                     JOIN almacenes alm ON aa.Almacen = alm.Almacen
                     WHERE alm.Habilitado = 1
                 `;
+                if (filters?.only_active) query += ` AND a.Habilitado = 1`;
+
                 let remoteCount: any;
                 try {
                     [remoteCount] = await cm.executeQuery<any>(branch.id, query)
@@ -185,7 +187,10 @@ export class ReportsService {
                             FROM articulo a
                             JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
                             JOIN almacenes alm ON aa.Almacen = alm.Almacen
+                            WHERE 1=1
                         `;
+                        if (filters?.only_active) query += ` AND a.Habilitado = 1`;
+                        
                         [remoteCount] = await cm.executeQuery<any>(branch.id, query)
                     } else {
                         throw err
@@ -225,7 +230,7 @@ export class ReportsService {
     /**
      * Obtiene el reporte de cobertura jerárquico
      */
-    async getCoverageReport(branchId?: number): Promise<CoverageItem[]> {
+    async getCoverageReport(branchId?: number, filters?: { only_active?: boolean }): Promise<CoverageItem[]> {
         const cm = ConnectionManager.getInstance()
         const branches = branchId
             ? cm.getAllBranchConfigs().filter(b => b.id === branchId)
@@ -242,8 +247,10 @@ export class ReportsService {
                     JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
                     JOIN almacenes alm ON aa.Almacen = alm.Almacen
                     WHERE alm.Habilitado = 1
-                    GROUP BY aa.Almacen, alm.Nombre, linea
                 `
+                if (filters?.only_active) remoteQuery += ` AND a.Habilitado = 1`;
+                remoteQuery += ` GROUP BY aa.Almacen, alm.Nombre, linea`;
+
                 let remoteData: any[];
                 try {
                     remoteData = await cm.executeQuery<any>(branch.id, remoteQuery)
@@ -254,8 +261,11 @@ export class ReportsService {
                             FROM articulo a
                             JOIN articuloalm aa ON a.Clave_Articulo = aa.Clave_Articulo
                             JOIN almacenes alm ON aa.Almacen = alm.Almacen
-                            GROUP BY aa.Almacen, alm.Nombre, linea
+                            WHERE 1=1
                         `
+                        if (filters?.only_active) remoteQuery += ` AND a.Habilitado = 1`;
+                        remoteQuery += ` GROUP BY aa.Almacen, alm.Nombre, linea`;
+                        
                         remoteData = await cm.executeQuery<any>(branch.id, remoteQuery)
                     } else {
                         throw err

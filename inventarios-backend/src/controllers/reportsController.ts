@@ -22,9 +22,10 @@ export const getAuditKPIs = async (req: AuthRequest, res: Response): Promise<voi
     }
 }
 
-export const getCompanyOverview = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getCompanyOverview = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const overview = await reportsService.getCompanyOverview()
+        const onlyActive = req.query.only_active === 'true'
+        const overview = await reportsService.getCompanyOverview({ only_active: onlyActive })
         res.json(overview)
     } catch (error) {
         logger.error('Get Company Overview error:', error)
@@ -35,7 +36,8 @@ export const getCompanyOverview = async (_req: AuthRequest, res: Response): Prom
 export const getCoverageReport = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined
-        const report = await reportsService.getCoverageReport(branchId)
+        const onlyActive = req.query.only_active === 'true'
+        const report = await reportsService.getCoverageReport(branchId, { only_active: onlyActive })
         res.json(report)
     } catch (error) {
         logger.error('Get Coverage Report error:', error)
