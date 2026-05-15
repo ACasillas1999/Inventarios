@@ -71,7 +71,13 @@ const loadCounts = async () => {
 
 const loadDiffs = async () => {
   try {
-    const data = await countsService.getDifferences()
+    const params: any = {}
+    if (filters.branch_id) params.branch_id = Number(filters.branch_id)
+    if (filters.classification) params.classification = filters.classification
+    if (filters.responsible_user_id) params.responsible_user_id = Number(filters.responsible_user_id)
+    if (filters.date_from) params.date_from = filters.date_from
+    if (filters.date_to) params.date_to = filters.date_to
+    const data = await countsService.getDifferences(params)
     diffs.value = Array.isArray(data) ? data : []
   } catch (err) {
     console.error('Error loading differences', err)

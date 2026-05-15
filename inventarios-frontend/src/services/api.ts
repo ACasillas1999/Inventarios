@@ -513,8 +513,14 @@ export const countsService = {
     return response.data
   },
 
-  getDifferences: async () => {
-    const response = await api.get('/counts/differences')
+  getDifferences: async (filters?: { branch_id?: number, classification?: string, responsible_user_id?: number, date_from?: string, date_to?: string }) => {
+    const params = new URLSearchParams()
+    if (filters?.branch_id) params.append('branch_id', filters.branch_id.toString())
+    if (filters?.classification) params.append('classification', filters.classification)
+    if (filters?.responsible_user_id) params.append('responsible_user_id', filters.responsible_user_id.toString())
+    if (filters?.date_from) params.append('date_from', filters.date_from)
+    if (filters?.date_to) params.append('date_to', filters.date_to)
+    const response = await api.get(`/counts/differences?${params.toString()}`)
     return response.data
   },
 

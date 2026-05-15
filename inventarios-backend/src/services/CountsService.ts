@@ -1801,7 +1801,13 @@ export class CountsService {
   /**
    * Lista diferencias registradas en detalles de conteo
    */
-  async listDifferences(): Promise<
+  async listDifferences(filters?: {
+    branch_id?: number
+    classification?: string
+    responsible_user_id?: number
+    date_from?: string
+    date_to?: string
+  }): Promise<
     Array<
       CountDetail & {
         folio: string
@@ -1809,8 +1815,7 @@ export class CountsService {
       }
     >
   > {
-    const [rows] = await this.pool.execute<RowDataPacket[]>(
-      `
+    let query = `
       SELECT
         cd.*,
         c.folio,
@@ -1819,9 +1824,33 @@ export class CountsService {
       INNER JOIN counts c ON c.id = cd.count_id
       WHERE cd.counted_stock IS NOT NULL
         AND cd.counted_stock != cd.system_stock
-      ORDER BY cd.updated_at DESC
-      `
-    )
+    `
+    const params: any[] = []
+
+    if (filters?.branch_id) {
+      query += ' AND c.branch_id = ?'
+      params.push(filters.branch_id)
+    }
+    if (filters?.classification) {
+      query += ' AND c.classification = ?'
+      params.push(filters.classification)
+    }
+    if (filters?.responsible_user_id) {
+      query += ' AND c.responsible_user_id = ?'
+      params.push(filters.responsible_user_id)
+    }
+    if (filters?.date_from) {
+      query += ' AND c.created_at >= ?'
+      params.push(filters.date_from)
+    }
+    if (filters?.date_to) {
+      query += ' AND c.created_at <= ?'
+      params.push(filters.date_to)
+    }
+
+    query += ' ORDER BY cd.updated_at DESC'
+
+    const [rows] = await this.pool.execute<RowDataPacket[]>(query, params)
     return rows as any
   }
 }
