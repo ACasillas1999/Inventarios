@@ -459,6 +459,93 @@ export class ReportsService {
             topRevisores
         }
     }
+
+    /**
+     * Obtiene el reporte de ajustes (diferencias) valorizadas
+     */
+    async getAdjustmentsReport(filters: { branch_id?: number, date_from?: string, date_to?: string }): Promise<any[]> {
+        const params: any[] = []
+        let query = `
+            SELECT 
+                c.branch_id,
+                b.name as branch_name,
+                LEFT(cd.item_code, 5) as linea,
+                cd.item_code,
+                SUM(CASE WHEN cd.difference > 0 THEN cd.difference ELSE 0 END) as diff_positive,
+                SUM(CASE WHEN cd.difference < 0 THEN ABS(cd.difference) ELSE 0 END) as diff_negative
+            FROM count_details cd
+            JOIN counts c ON cd.count_id = c.id
+            JOIN branches b ON c.branch_id = b.id
+            WHERE c.classification = 'inventario' 
+              AND (c.status = 'cerrado' OR c.status = 'contado')
+        `
+        
+        if (filters.branch_id) {
+            query += ' AND c.branch_id = ?'
+            params.push(filters.branch_id)
+        }
+        if (filters.date_from) {
+            query += ' AND c.created_at >= ?'
+            params.push(filters.date_from)
+        }
+        if (filters.date_to) {
+            query += ' AND c.created_at <= ?'
+            params.push(filters.date_to)
+        }
+        
+        query += ' GROUP BY c.branch_id, branch_name, linea, cd.item_code HAVING diff_positive > 0 OR diff_negative > 0'
+        
+        const [rows] = await this.pool.execute<RowDataPacket[]>(query, params)
+        
+        if (rows.length === 0) return []
+
+        const cm = ConnectionManager.getInstance()
+        const results: any[] = []
+
+        const byBranch = new Map<number, any[]>()
+        for (const row of rows) {
+            if (!byBranch.has(row.branch_id)) byBranch.set(row.branch_id, [])
+            byBranch.get(row.branch_id)!.push(row)
+        }
+
+        for (const [branchId, branchRows] of byBranch.entries()) {
+            const itemCodes = branchRows.map((r: any) => `'${r.item_code}'`).join(',')
+            let remoteCosts = new Map<string, number>()
+            
+            try {
+                const remoteQuery = `
+                    SELECT Clave_Articulo, MAX(Costo_Promedio) as costo
+                    FROM articuloalm
+                    WHERE Clave_Articulo IN (${itemCodes})
+                    GROUP BY Clave_Articulo
+                `
+                const remoteData = await cm.executeQuery<any>(branchId, remoteQuery)
+                
+                for (const row of remoteData) {
+                    remoteCosts.set(row.Clave_Articulo, Number(row.costo) || 0)
+                }
+            } catch (err: any) {
+                logger.error(`Error fetching remote costs for branch ${branchId}:`, err)
+            }
+
+            for (const row of branchRows) {
+                const cost = remoteCosts.get(row.item_code) || 0
+                results.push({
+                    branch_id: row.branch_id,
+                    branch_name: row.branch_name,
+                    line: row.linea,
+                    item_code: row.item_code,
+                    qty_positive: Number(row.diff_positive),
+                    amount_positive: Number(row.diff_positive) * cost,
+                    qty_negative: Number(row.diff_negative),
+                    amount_negative: Number(row.diff_negative) * cost,
+                    unit_cost: cost
+                })
+            }
+        }
+
+        return results
+    }
 }
 
 export const reportsService = new ReportsService()

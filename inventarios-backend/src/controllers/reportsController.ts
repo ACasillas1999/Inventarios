@@ -83,4 +83,23 @@ export const getProductivityStats = async (req: AuthRequest, res: Response): Pro
     }
 }
 
-export default { getAuditKPIs, getCompanyOverview, getCoverageReport, getLineStats, getProductivityStats }
+export const getAdjustmentsReport = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined
+        const dateFrom = req.query.date_from as string
+        const dateTo = req.query.date_to as string
+
+        const report = await reportsService.getAdjustmentsReport({
+            branch_id: branchId,
+            date_from: dateFrom,
+            date_to: dateTo
+        })
+
+        res.json(report)
+    } catch (error) {
+        logger.error('Get Adjustments Report error:', error)
+        res.status(500).json({ error: 'Failed to generate adjustments report' })
+    }
+}
+
+export default { getAuditKPIs, getCompanyOverview, getCoverageReport, getLineStats, getProductivityStats, getAdjustmentsReport }

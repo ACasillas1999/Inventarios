@@ -25,7 +25,7 @@ async function addRealBranch() {
       database: process.env.DB_LOCAL_DATABASE || 'inventarios'
     })
 
-    console.log('✅ Conectado a MySQL\n')
+    console.log('Conectado a MySQL\n')
 
     // Datos de la sucursal real
     const branch = {

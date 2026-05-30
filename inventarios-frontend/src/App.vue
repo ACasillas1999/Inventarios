@@ -121,6 +121,11 @@ const navSections = computed(() => [
         to: '/reportes/cobertura',
         icon: IconChartBar,
       },
+      {
+        label: 'Reporte de Ajustes',
+        to: '/reportes/ajustes',
+        icon: IconArrowsDiff,
+      },
     ],
   },
   {

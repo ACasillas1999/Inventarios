@@ -745,6 +745,17 @@ export const reportsService = {
 
     const response = await api.get(`/reports/productivity?${params.toString()}`)
     return response.data
+  },
+  getAdjustmentsReport: async (filters: { branch_id?: number, date_from?: string, date_to?: string }) => {
+    const params = new URLSearchParams()
+    if (filters.branch_id) params.append('branch_id', filters.branch_id.toString())
+    if (filters.date_from) params.append('date_from', filters.date_from)
+    if (filters.date_to) params.append('date_to', filters.date_to)
+
+    const response = await api.get(`/reports/adjustments?${params.toString()}`, {
+      timeout: STOCK_TIMEOUT_MS
+    })
+    return response.data
   }
 }
 
