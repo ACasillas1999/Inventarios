@@ -70,6 +70,7 @@ const filters = reactive({
   branch_id: '',
   statuses: ['pendiente', 'contando'] as string[],
   classification: '',
+  priority: '',
   date_from: '',
   date_to: ''
 })
@@ -270,6 +271,13 @@ const classificationLabel: Record<string, string> = {
   inventario: 'Inventario',
   ajuste: 'Ajuste',
   migracion: 'Migración'
+}
+
+const priorityLabel: Record<string, string> = {
+  baja: 'Baja',
+  media: 'Media',
+  alta: 'Alta',
+  urgente: 'Urgente'
 }
 
 const almacenLabel = (almacen: number | undefined) => {
@@ -874,6 +882,7 @@ const loadCounts = async () => {
     if (filters.branch_id) params.branch_id = Number(filters.branch_id)
     if (filters.statuses.length) params.status = filters.statuses
     if (filters.classification) params.classification = filters.classification
+    if (filters.priority) params.priority = filters.priority
     if (viewMode.value === 'calendar') {
       // Load all counts for calendar view (we'll filter by date on the frontend)
       // This allows showing counts with scheduled_date OR created_at
@@ -951,6 +960,7 @@ type CountSortKey =
   | 'branch'
   | 'warehouse'
   | 'classification'
+  | 'priority'
   | 'status'
   | 'responsible'
   | 'created'
@@ -981,6 +991,10 @@ const sortedFilteredCounts = computed(() => {
       if (key === 'branch') return branchNameById.value.get(count.branch_id) || ''
       if (key === 'warehouse') return (count as any).almacen_nombre || String(count.almacen || '')
       if (key === 'classification') return classificationLabel[count.classification] || count.classification || ''
+      if (key === 'priority') {
+        const pWeights: Record<string, number> = { baja: 1, media: 2, alta: 3, urgente: 4 }
+        return pWeights[count.priority] || 2
+      }
       if (key === 'status') return statusLabel[count.status] || count.status || ''
       if (key === 'responsible') return (count as any).responsible_user_name || ''
       if (key === 'created') return new Date((count as any).created_at || 0).getTime()
@@ -1000,6 +1014,7 @@ const resetFilters = () => {
     branch_id: '',
     statuses: ['pendiente', 'contando'],
     classification: '',
+    priority: '',
     date_from: '',
     date_to: ''
   })
@@ -1009,7 +1024,7 @@ const resetFilters = () => {
 }
 
 // Watchers for automatic reload on filter/search change
-watch([() => filters.branch_id, () => filters.statuses.join('|'), () => filters.classification, () => filters.date_from, () => filters.date_to], () => {
+watch([() => filters.branch_id, () => filters.statuses.join('|'), () => filters.classification, () => filters.priority, () => filters.date_from, () => filters.date_to], () => {
   page.value = 1
   loadCounts()
 })
@@ -1307,6 +1322,16 @@ watch(counts, (newCounts) => {
                 <option value="ajuste">Ajuste</option>
               </select>
             </div>
+            <div>
+              <label for="priority">Prioridad</label>
+              <select id="priority" v-model="filters.priority" @change="loadCounts">
+                <option value="">Todas</option>
+                <option value="baja">Baja</option>
+                <option value="media">Media</option>
+                <option value="alta">Alta</option>
+                <option value="urgente">Urgente</option>
+              </select>
+            </div>
             <div v-if="viewMode !== 'calendar'">
               <label for="date-from">Fecha desde</label>
               <input id="date-from" v-model="filters.date_from" type="date" @change="loadCounts" />
@@ -1462,6 +1487,15 @@ watch(counts, (newCounts) => {
                     </div>
                   </div>
                 </th>
+                <th>
+                  <div class="th-sort">
+                    <span>Prioridad</span>
+                    <div class="th-sort-buttons">
+                      <button :class="{ active: isSortActive('priority', 'asc') }" @click="toggleSort('priority')">&#9650;</button>
+                      <button :class="{ active: isSortActive('priority', 'desc') }" @click="toggleSort('priority')">&#9660;</button>
+                    </div>
+                  </div>
+                </th>
                 <th>Artículos</th>
                 <th>
                   <div class="th-sort">
@@ -1529,6 +1563,11 @@ watch(counts, (newCounts) => {
                     {{ classificationLabel[count.classification] || count.classification }}
                   </strong>
                 </td>
+                <td data-label="Prioridad">
+                  <span :class="['priority-badge', count.priority]">
+                    {{ priorityLabel[count.priority] || count.priority || 'Media' }}
+                  </span>
+                </td>
                 <td data-label="Artículos">
                   <div class="item-codes-cell">
                     {{ (count as any).item_codes || '-' }}
@@ -1569,6 +1608,7 @@ watch(counts, (newCounts) => {
                 <th>Folio</th>
                 <th>Sucursal</th>
                 <th>Clasificación</th>
+                <th>Prioridad</th>
                 <th>Estado</th>
                 <th>Creación</th>
                 <th rowspan="2">Ver</th>
@@ -1602,6 +1642,11 @@ watch(counts, (newCounts) => {
                     <strong :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
                       {{ classificationLabel[count.classification] || count.classification }}
                     </strong>
+                  </td>
+                  <td>
+                    <span :class="['priority-badge', count.priority]">
+                      {{ priorityLabel[count.priority] || count.priority || 'Media' }}
+                    </span>
                   </td>
                   <td>
                     <span :class="['status', statusClass(count.status)]">
@@ -1937,6 +1982,23 @@ watch(counts, (newCounts) => {
 </template>
 
 <style scoped>
+/* ============================================
+   PRIORITY BADGES
+   ============================================ */
+.priority-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.priority-badge.baja { background: #f1f5f9; color: #64748b; }
+.priority-badge.media { background: #e0e7ff; color: #4338ca; }
+.priority-badge.alta { background: #fef08a; color: #a16207; }
+.priority-badge.urgente { background: #fee2e2; color: #b91c1c; }
+
 /* ============================================
    FILTERS TOGGLE (MOBILE)
    ============================================ */

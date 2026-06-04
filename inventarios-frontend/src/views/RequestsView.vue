@@ -29,11 +29,13 @@ const filters = reactive<{
   statuses: RequestStatus[]
   branch_id: number | ''
   count_id: number | ''
+  priority: string
   limit: number
 }>({
   statuses: ['pendiente', 'en_revision'],
   branch_id: '',
   count_id: '',
+  priority: '',
   limit: 50,
 })
 
@@ -43,6 +45,7 @@ type RequestSortKey =
   | 'status'
   | 'branch'
   | 'count'
+  | 'priority'
   | 'item'
   | 'system'
   | 'counted'
@@ -64,6 +67,13 @@ const statusLabel = (status: string) => {
   if (status === 'ajustado') return 'Ajustado'
   if (status === 'rechazado') return 'Rechazado'
   return status || 'Sin estado'
+}
+
+const priorityLabel: Record<string, string> = {
+  baja: 'Baja',
+  media: 'Media',
+  alta: 'Alta',
+  urgente: 'Urgente'
 }
 
 const statusClass = (status: string) => {
@@ -157,6 +167,10 @@ const sortedRequests = computed(() => {
       if (key === 'status') return statusLabel(row.status)
       if (key === 'branch') return branchName(row.branch_id)
       if (key === 'count') return row.count_folio || String(row.count_id || '')
+      if (key === 'priority') {
+        const pWeights: Record<string, number> = { baja: 1, media: 2, alta: 3, urgente: 4 }
+        return pWeights[row.count_priority || 'media'] || 2
+      }
       if (key === 'item') return row.item_code || ''
       if (key === 'system') return Number(row.system_stock ?? 0)
       if (key === 'counted') return Number(row.counted_stock ?? 0)
@@ -190,6 +204,7 @@ const loadRequests = async () => {
       status: filters.statuses.length ? filters.statuses : undefined,
       branch_id: filters.branch_id || undefined,
       count_id: filters.count_id || undefined,
+      priority: filters.priority || undefined,
       limit: filters.limit,
       offset: offset.value,
     })
@@ -500,6 +515,16 @@ onBeforeUnmount(() => {
             />
           </div>
           <div>
+            <label>Prioridad</label>
+            <select v-model="filters.priority" @change="applyFilters">
+              <option value="">Todas</option>
+              <option value="baja">Baja</option>
+              <option value="media">Media</option>
+              <option value="alta">Alta</option>
+              <option value="urgente">Urgente</option>
+            </select>
+          </div>
+          <div>
             <label>Limite</label>
             <input
               v-model.number="filters.limit"
@@ -562,6 +587,12 @@ onBeforeUnmount(() => {
               >
                 {{ row.count_folio || `#${row.count_id}` }}
               </router-link>
+            </div>
+            <div class="count-detail-item">
+              <span class="detail-label">PRIORIDAD</span>
+              <span :class="['priority-badge', row.count_priority || 'media']" style="transform: scale(0.9); transform-origin: left;">
+                {{ priorityLabel[row.count_priority || 'media'] || (row.count_priority || 'Media') }}
+              </span>
             </div>
             <div class="count-detail-item">
               <span class="detail-label">SISTEMA</span>
@@ -654,6 +685,15 @@ onBeforeUnmount(() => {
               </th>
               <th>
                 <div class="th-sort">
+                  <span>Prioridad</span>
+                  <div class="th-sort-buttons">
+                    <button :class="{ active: isSortActive('priority', 'asc') }" @click="toggleSort('priority')">&#9650;</button>
+                    <button :class="{ active: isSortActive('priority', 'desc') }" @click="toggleSort('priority')">&#9660;</button>
+                  </div>
+                </div>
+              </th>
+              <th>
+                <div class="th-sort">
                   <span>Articulo</span>
                   <div class="th-sort-buttons">
                     <button :class="{ active: isSortActive('item', 'asc') }" @click="toggleSort('item')">&#9650;</button>
@@ -730,6 +770,11 @@ onBeforeUnmount(() => {
                     {{ row.count_classification === 'ajuste' ? 'Ajuste directo' : (row.count_classification === 'migracion' ? 'Migración' : 'Conteo normal') }}
                   </span>
                 </div>
+              </td>
+              <td>
+                <span :class="['priority-badge', row.count_priority || 'media']">
+                  {{ priorityLabel[row.count_priority || 'media'] || (row.count_priority || 'Media') }}
+                </span>
               </td>
               <td>
                 <strong>{{ row.item_code }}</strong>
@@ -929,6 +974,23 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* ============================================
+   PRIORITY BADGES
+   ============================================ */
+.priority-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.priority-badge.baja { background: #f1f5f9; color: #64748b; }
+.priority-badge.media { background: #e0e7ff; color: #4338ca; }
+.priority-badge.alta { background: #fef08a; color: #a16207; }
+.priority-badge.urgente { background: #fee2e2; color: #b91c1c; }
+
 .panel-top {
   margin-bottom: 0.9rem;
   padding: 0.9rem;

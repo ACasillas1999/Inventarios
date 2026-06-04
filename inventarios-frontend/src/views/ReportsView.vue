@@ -89,6 +89,8 @@ const loadKPIs = async () => {
         loadingKpis.value = true
         const params: any = {}
         if (filters.branch_id) params.branch_id = Number(filters.branch_id)
+        if (filters.classification) params.classification = filters.classification
+        if (filters.responsible_user_id) params.responsible_user_id = Number(filters.responsible_user_id)
         if (filters.date_from) params.date_from = filters.date_from
         if (filters.date_to) params.date_to = filters.date_to
         kpis.value = await reportsService.getAuditKPIs(params)
@@ -136,6 +138,8 @@ const loadProductivity = async () => {
         loadingProductivity.value = true
         const params: any = {}
         if (filters.branch_id) params.branch_id = Number(filters.branch_id)
+        if (filters.classification) params.classification = filters.classification
+        if (filters.responsible_user_id) params.responsible_user_id = Number(filters.responsible_user_id)
         if (filters.date_from) params.date_from = filters.date_from
         if (filters.date_to) params.date_to = filters.date_to
         productivity.value = await reportsService.getProductivityStats(params)

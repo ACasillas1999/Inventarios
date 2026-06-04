@@ -66,6 +66,7 @@ export const listRequests = async (req: AuthRequest, res: Response): Promise<voi
       branch_id,
       branch_ids,
       count_id,
+      priority: req.query.priority as string | undefined,
       surtidor_id: roleId === 4 ? userId : undefined,
       limit,
       offset

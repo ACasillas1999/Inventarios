@@ -35,7 +35,7 @@ export class ReportsService {
     /**
      * Obtiene métricas de auditoría y tiempos de respuesta
      */
-    async getAuditKPIs(filters: { branch_id?: number, date_from?: string, date_to?: string }): Promise<KPIStats> {
+    async getAuditKPIs(filters: { branch_id?: number, classification?: string, responsible_user_id?: number, date_from?: string, date_to?: string }): Promise<KPIStats> {
         let query = `
       SELECT 
         c.id, c.folio, c.created_at, c.assigned_at, c.started_at, c.finished_at, c.closed_at,
@@ -51,6 +51,14 @@ export class ReportsService {
         if (filters.branch_id) {
             query += ' AND c.branch_id = ?'
             params.push(filters.branch_id)
+        }
+        if (filters.classification) {
+            query += ' AND c.classification = ?'
+            params.push(filters.classification)
+        }
+        if (filters.responsible_user_id) {
+            query += ' AND c.responsible_user_id = ?'
+            params.push(filters.responsible_user_id)
         }
         if (filters.date_from) {
             query += ' AND c.created_at >= ?'
@@ -107,12 +115,35 @@ export class ReportsService {
         })
 
         // KPI 3: Resolución de solicitudes (Entradas Inventarios)
-        const [reqRows] = await this.pool.execute<RowDataPacket[]>(
-            `SELECT r.created_at, r.reviewed_at, u.name as reviewer_name 
+        let reqQuery = `SELECT r.created_at, r.reviewed_at, u.name as reviewer_name 
        FROM requests r
+       JOIN counts c ON r.count_id = c.id
        LEFT JOIN users u ON r.reviewed_by_user_id = u.id
        WHERE r.status != 'pendiente'`
-        )
+        
+        const reqParams: any[] = []
+        if (filters.branch_id) {
+            reqQuery += ' AND c.branch_id = ?'
+            reqParams.push(filters.branch_id)
+        }
+        if (filters.classification) {
+            reqQuery += ' AND c.classification = ?'
+            reqParams.push(filters.classification)
+        }
+        if (filters.responsible_user_id) {
+            reqQuery += ' AND c.responsible_user_id = ?'
+            reqParams.push(filters.responsible_user_id)
+        }
+        if (filters.date_from) {
+            reqQuery += ' AND c.created_at >= ?'
+            reqParams.push(filters.date_from)
+        }
+        if (filters.date_to) {
+            reqQuery += ' AND c.created_at <= ?'
+            reqParams.push(filters.date_to)
+        }
+
+        const [reqRows] = await this.pool.execute<RowDataPacket[]>(reqQuery, reqParams)
         let totalResMin = 0
         let countRes = 0
         const resolutionStats = new Map<string, { total_res_min: number, count_res: number }>()
@@ -397,13 +428,21 @@ export class ReportsService {
     /**
      * Obtiene estadísticas de productividad por usuario
      */
-    async getProductivityStats(filters: { branch_id?: number, date_from?: string, date_to?: string }) {
+    async getProductivityStats(filters: { branch_id?: number, classification?: string, responsible_user_id?: number, date_from?: string, date_to?: string }) {
         const params: any[] = []
         let whereClause = ''
 
         if (filters.branch_id) {
             whereClause += ' AND c.branch_id = ?'
             params.push(filters.branch_id)
+        }
+        if (filters.classification) {
+            whereClause += ' AND c.classification = ?'
+            params.push(filters.classification)
+        }
+        if (filters.responsible_user_id) {
+            whereClause += ' AND c.responsible_user_id = ?'
+            params.push(filters.responsible_user_id)
         }
         if (filters.date_from) {
             whereClause += ' AND c.created_at >= ?'

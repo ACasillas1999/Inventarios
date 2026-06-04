@@ -20,6 +20,7 @@ const requestSelectQuery = `
     r.*,
     c.folio as count_folio,
     c.classification as count_classification,
+    c.priority as count_priority,
     cd.warehouse_id,
     cd.warehouse_name,
     u_requested.name as requested_by_name,
@@ -51,6 +52,7 @@ export type RequestRow = {
   warehouse_id?: number
   warehouse_name?: string
   count_classification?: 'inventario' | 'ajuste' | 'migracion'
+  count_priority?: 'baja' | 'media' | 'alta' | 'urgente' | string
   requested_by_name?: string | null
   reviewed_by_name?: string | null
   created_at: string
@@ -78,6 +80,7 @@ export class RequestsService {
     branch_ids?: number[]
     count_id?: number
     surtidor_id?: number
+    priority?: string
     limit?: number
     offset?: number
   }): Promise<{ requests: RequestRow[]; total: number }> {
@@ -127,6 +130,12 @@ export class RequestsService {
       query += ' AND c.responsible_user_id = ?'
       countQuery += ' AND c.responsible_user_id = ?'
       params.push(filters.surtidor_id)
+    }
+
+    if (filters.priority) {
+      query += ' AND c.priority = ?'
+      countQuery += ' AND c.priority = ?'
+      params.push(filters.priority)
     }
 
     query += ' ORDER BY r.created_at DESC'

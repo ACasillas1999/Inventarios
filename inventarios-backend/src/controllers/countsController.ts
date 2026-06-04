@@ -185,6 +185,7 @@ export const listCounts = async (req: AuthRequest, res: Response): Promise<void>
       statuses: statusValues.length > 1 ? statusValues : undefined,
       type: req.query.type as string | undefined,
       classification: req.query.classification as string | undefined,
+      priority: req.query.priority as string | undefined,
       branch_ids,
       responsible_user_id: roleId === 4
         ? userId

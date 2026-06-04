@@ -6,11 +6,15 @@ import { logger } from '../utils/logger'
 export const getAuditKPIs = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined
+        const classification = req.query.classification as string
+        const responsibleUserId = req.query.responsible_user_id ? parseInt(req.query.responsible_user_id as string) : undefined
         const dateFrom = req.query.date_from as string
         const dateTo = req.query.date_to as string
 
         const kpis = await reportsService.getAuditKPIs({
             branch_id: branchId,
+            classification,
+            responsible_user_id: responsibleUserId,
             date_from: dateFrom,
             date_to: dateTo
         })
@@ -67,11 +71,15 @@ export const getLineStats = async (req: AuthRequest, res: Response): Promise<voi
 export const getProductivityStats = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined
+        const classification = req.query.classification as string
+        const responsibleUserId = req.query.responsible_user_id ? parseInt(req.query.responsible_user_id as string) : undefined
         const dateFrom = req.query.date_from as string
         const dateTo = req.query.date_to as string
 
         const stats = await reportsService.getProductivityStats({
             branch_id: branchId,
+            classification,
+            responsible_user_id: responsibleUserId,
             date_from: dateFrom,
             date_to: dateTo
         })

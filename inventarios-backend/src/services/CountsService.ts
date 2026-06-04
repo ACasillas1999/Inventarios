@@ -971,6 +971,7 @@ export class CountsService {
     statuses?: string[]
     type?: string
     classification?: string
+    priority?: string
     responsible_user_id?: number
     date_from?: string
     date_to?: string
@@ -1036,6 +1037,12 @@ export class CountsService {
       query += ' AND c.classification = ?'
       countQuery += ' AND c.classification = ?'
       filterParams.push(filters.classification)
+    }
+
+    if (filters.priority) {
+      query += ' AND c.priority = ?'
+      countQuery += ' AND c.priority = ?'
+      filterParams.push(filters.priority)
     }
 
     if (filters.responsible_user_id) {
