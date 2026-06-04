@@ -585,6 +585,7 @@ export const requestsService = {
     status?: RequestStatus | RequestStatus[]
     branch_id?: number
     count_id?: number
+    priority?: string
     limit?: number
     offset?: number
   }): Promise<{ requests: AdjustmentRequest[]; total: number }> => {
