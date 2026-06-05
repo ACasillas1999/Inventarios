@@ -254,6 +254,9 @@ onMounted(async () => {
             {{ user.name }} ({{ user.email }})
           </option>
         </select>
+        <span class="muted" style="font-size: 0.8rem; margin-top: 0.2rem; display: block;">
+          Usuarios cargados: {{ users.length }}, Filtrados: {{ filteredUsers.length }}
+        </span>
       </div>
       <div>
         <label for="date">Fecha programada</label>
