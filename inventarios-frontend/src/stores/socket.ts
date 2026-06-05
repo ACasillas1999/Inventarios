@@ -24,6 +24,7 @@ export const useSocketStore = defineStore('socket', () => {
     const url = getBaseUrl()
     const path = '/ws'
     const connectedCountRooms = new Set<number>()
+    const connectedRequestRooms = new Set<number>()
 
     const connect = () => {
         if (socket.value?.connected) return
@@ -49,6 +50,10 @@ export const useSocketStore = defineStore('socket', () => {
             connectedCountRooms.forEach(id => {
                 console.log(`Re-joining count room: ${id}`)
                 socket.value?.emit('join_count', id)
+            })
+            connectedRequestRooms.forEach(id => {
+                console.log(`Re-joining request room: ${id}`)
+                socket.value?.emit('join_request', id)
             })
         })
 
@@ -101,6 +106,20 @@ export const useSocketStore = defineStore('socket', () => {
         }
     }
 
+    const joinRequest = (requestId: number) => {
+        connectedRequestRooms.add(requestId)
+        if (socket.value?.connected) {
+            socket.value.emit('join_request', requestId)
+        }
+    }
+
+    const leaveRequest = (requestId: number) => {
+        connectedRequestRooms.delete(requestId)
+        if (socket.value?.connected) {
+            socket.value.emit('leave_request', requestId)
+        }
+    }
+
     const on = (event: string, callback: (...args: any[]) => void) => {
         if (!socket.value) connect()
         console.log(`Registering listener for: ${event}`)
@@ -128,6 +147,8 @@ export const useSocketStore = defineStore('socket', () => {
         disconnect,
         joinCount,
         leaveCount,
+        joinRequest,
+        leaveRequest,
         on,
         emit
     }

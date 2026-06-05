@@ -4,9 +4,11 @@ import {
   auditService,
   branchesService,
   requestsService,
+  requestCommentsService,
   type AdjustmentRequest,
   type Branch,
   type RequestStatus,
+  type RequestComment,
 } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { useSocketStore } from '@/stores/socket'
@@ -298,6 +300,56 @@ const modalHeaderActionGuide = computed(() =>
     : 'Accion requerida: define estatus y documenta la resolucion.',
 )
 
+// ============================================
+// CHAT EN VIVO
+// ============================================
+const chatComments = ref<RequestComment[]>([])
+const chatLoading = ref(false)
+const chatError = ref('')
+const chatMessage = ref('')
+const chatSending = ref(false)
+const chatScrollRef = ref<HTMLDivElement | null>(null)
+
+const scrollChatToBottom = () => {
+  setTimeout(() => {
+    if (chatScrollRef.value) {
+      chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
+    }
+  }, 50)
+}
+
+const loadComments = async (requestId: number) => {
+  chatLoading.value = true
+  chatError.value = ''
+  try {
+    const resp = await requestCommentsService.list(requestId)
+    chatComments.value = Array.isArray(resp?.comments) ? resp.comments : []
+    scrollChatToBottom()
+  } catch (err) {
+    console.error('Error loading comments', err)
+    chatError.value = 'No se pudo cargar el chat.'
+  } finally {
+    chatLoading.value = false
+  }
+}
+
+const sendComment = async () => {
+  if (!managing.value) return
+  const msg = chatMessage.value.trim()
+  if (!msg || chatSending.value) return
+  chatSending.value = true
+  try {
+    await requestCommentsService.create(managing.value.id, msg)
+    chatMessage.value = ''
+    // The WebSocket event will add the message, but if no WS just reload
+  } catch (err) {
+    console.error('Error sending comment', err)
+    alert('No se pudo enviar el mensaje.')
+  } finally {
+    chatSending.value = false
+  }
+}
+
 const isManageStatusOptionDisabled = (option: RequestStatus) => {
   if (!managedCurrentStatus.value) return false
   return !canTransitionRequestStatus(managedCurrentStatus.value, option)
@@ -368,9 +420,18 @@ const openManage = (row: AdjustmentRequest) => {
   manageNotes.value = row.resolution_notes || ''
   showManageModal.value = true
   void loadStatusHistory(row)
+  // Chat
+  chatComments.value = []
+  chatMessage.value = ''
+  chatError.value = ''
+  void loadComments(row.id)
+  socketStore.joinRequest(row.id)
 }
 
 const closeManage = () => {
+  if (managing.value) {
+    socketStore.leaveRequest(managing.value.id)
+  }
   showManageModal.value = false
   managing.value = null
   manageNotes.value = ''
@@ -379,6 +440,9 @@ const closeManage = () => {
   statusHistoryItems.value = []
   statusHistoryError.value = ''
   statusHistoryLoading.value = false
+  chatComments.value = []
+  chatMessage.value = ''
+  chatError.value = ''
 }
 
 const saveManage = async () => {
@@ -433,6 +497,18 @@ onMounted(() => {
   socketCleanups.push(socketStore.on('request_status', () => {
     console.log('Real-time: request_status')
     loadRequests()
+  }))
+
+  // Real-time chat
+  socketCleanups.push(socketStore.on('request_comment', (payload: any) => {
+    const comment: RequestComment = payload?.data ?? payload
+    if (managing.value && comment.request_id === managing.value.id) {
+      // Evitar duplicados
+      if (!chatComments.value.find(c => c.id === comment.id)) {
+        chatComments.value.push(comment)
+        scrollChatToBottom()
+      }
+    }
   }))
 })
 
@@ -958,6 +1034,58 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+
+          <!-- Chat en vivo -->
+          <section class="chat-section">
+            <div class="chat-section-head">
+              <div class="chat-section-title-row">
+                <span class="chat-icon">&#128172;</span>
+                <h4>Chat en vivo</h4>
+                <span class="chat-badge">{{ chatComments.length }}</span>
+              </div>
+              <p class="chat-subtitle">Comunicación en tiempo real sobre esta solicitud.</p>
+            </div>
+
+            <div class="chat-messages" ref="chatScrollRef">
+              <p v-if="chatLoading" class="chat-empty">Cargando mensajes...</p>
+              <p v-else-if="chatError" class="chat-empty chat-empty--error">{{ chatError }}</p>
+              <p v-else-if="chatComments.length === 0" class="chat-empty">Sin mensajes aún. ¡Inicia la conversación!</p>
+              <div v-else class="chat-list">
+                <div
+                  v-for="c in chatComments"
+                  :key="c.id"
+                  class="chat-bubble"
+                  :class="{ 'chat-bubble--own': c.user_id === authStore.user?.id }"
+                >
+                  <div class="chat-bubble-meta">
+                    <span class="chat-bubble-author">{{ c.user_name || 'Usuario' }}</span>
+                    <span class="chat-bubble-time">{{ formatDateTime(c.created_at) }}</span>
+                  </div>
+                  <p class="chat-bubble-text">{{ c.message }}</p>
+                </div>
+              </div>
+            </div>
+
+            <form class="chat-input-row" @submit.prevent="sendComment">
+              <input
+                id="chat-message-input"
+                v-model="chatMessage"
+                type="text"
+                placeholder="Escribe un mensaje..."
+                maxlength="2000"
+                autocomplete="off"
+                :disabled="chatSending"
+                class="chat-input"
+              />
+              <button
+                type="submit"
+                class="btn chat-send-btn"
+                :disabled="!chatMessage.trim() || chatSending"
+              >
+                {{ chatSending ? '...' : 'Enviar' }}
+              </button>
+            </form>
+          </section>
         </div>
         <div class="modal-footer">
           <p class="modal-footer-hint">{{ manageStatusHint }}</p>
@@ -977,6 +1105,174 @@ onBeforeUnmount(() => {
 /* ============================================
    PRIORITY BADGES
    ============================================ */
+
+/* ============================================
+   CHAT EN VIVO
+   ============================================ */
+.chat-section {
+  margin-top: 1.25rem;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1.25rem;
+}
+
+.chat-section-head {
+  margin-bottom: 0.75rem;
+}
+
+.chat-section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.chat-section-title-row h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.chat-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.chat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.3rem;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chat-subtitle {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.chat-messages {
+  min-height: 120px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  scroll-behavior: smooth;
+}
+
+.chat-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  margin: auto;
+  padding: 1rem 0;
+}
+
+.chat-empty--error {
+  color: #dc2626;
+}
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  align-self: flex-start;
+}
+
+.chat-bubble--own {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-bubble-meta {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+  margin-bottom: 0.2rem;
+}
+
+.chat-bubble-author {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.chat-bubble-time {
+  font-size: 0.65rem;
+  color: #94a3b8;
+}
+
+.chat-bubble-text {
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  border-radius: 12px 12px 12px 4px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  font-size: 0.85rem;
+  color: #1e293b;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.06);
+}
+
+.chat-bubble--own .chat-bubble-text {
+  border-radius: 12px 12px 4px 12px;
+  background: #2563eb;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.875rem;
+  background: #fff;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+  outline: none;
+}
+
+.chat-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.chat-send-btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
 .priority-badge {
   display: inline-block;
   padding: 0.15rem 0.5rem;

@@ -844,4 +844,25 @@ export const settingsService = {
   }
 }
 
+export interface RequestComment {
+  id: number
+  request_id: number
+  user_id: number
+  user_name: string | null
+  message: string
+  created_at: string
+}
+
+export const requestCommentsService = {
+  list: async (requestId: number): Promise<{ comments: RequestComment[] }> => {
+    const response = await api.get(`/requests/${requestId}/comments`)
+    return response.data
+  },
+
+  create: async (requestId: number, message: string): Promise<RequestComment> => {
+    const response = await api.post(`/requests/${requestId}/comments`, { message })
+    return response.data
+  }
+}
+
 export default api

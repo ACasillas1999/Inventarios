@@ -70,6 +70,16 @@ export const initializeWebSocket = (httpServer: HTTPServer): SocketIOServer => {
       logger.debug(`User ${user.id} left branch ${branchId}`)
     })
 
+    socket.on('join_request', (requestId: number) => {
+      socket.join(`request:${requestId}`)
+      logger.debug(`User ${user.id} joined request ${requestId}`)
+    })
+
+    socket.on('leave_request', (requestId: number) => {
+      socket.leave(`request:${requestId}`)
+      logger.debug(`User ${user.id} left request ${requestId}`)
+    })
+
     // Desconexión
     socket.on('disconnect', () => {
       logger.info(`WebSocket client disconnected: ${user.email} (${socket.id})`)
@@ -299,6 +309,21 @@ export const emitCountReassigned = (
   logger.debug(`Count reassigned emitted for ${folio}: ${oldResponsibleId} -> ${newResponsibleId}`)
 }
 
+/**
+ * Emite un nuevo comentario de solicitud a todos los usuarios en la sala de esa solicitud
+ */
+export const emitRequestComment = (requestId: number, comment: any): void => {
+  if (!io) return
+
+  io.to(`request:${requestId}`).emit('request_comment', {
+    type: 'request_comment',
+    data: comment,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Request comment emitted for request ${requestId}`)
+}
+
 export default {
   initializeWebSocket,
   getWebSocketServer,
@@ -310,6 +335,7 @@ export default {
   emitCountStatusChanged,
   emitCountDetailAdded,
   emitCountReassigned,
+  emitRequestComment,
   emitToRoom,
   emitToUser,
   emitToRole
