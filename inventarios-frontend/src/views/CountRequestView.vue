@@ -16,16 +16,7 @@ const branches = ref<Branch[]>([])
 const connectedBranches = computed(() => branches.value.filter(b => b.status === 'connected'))
 const users = ref<UserOption[]>([])
 
-const filteredUsers = computed(() => {
-  if (!form.branch_id) return users.value
-  const branchId = Number(form.branch_id)
-  return users.value.filter(u => {
-    if (u.role_id === 1) return true // Roles administrativos
-    if (u.branch_id === branchId) return true
-    if (u.branches?.some(b => b.id === branchId)) return true
-    return false
-  })
-})
+const filteredUsers = computed(() => users.value)
 
 watch(() => form.branch_id, (newBranchId) => {
   if (newBranchId && form.responsible_user_id) {
