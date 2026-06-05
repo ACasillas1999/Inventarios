@@ -138,16 +138,7 @@ const calendarRange = computed(() => {
   return { start, end, from: toISODate(start), to: toISODate(end) }
 })
 
-const filteredUsers = computed(() => {
-  const role = authStore.user?.role_name || ''
-  if (role === 'jefe_inventarios') {
-    return users.value.filter((u) => u.role_slug === 'jefe_almacen')
-  }
-  if (role === 'jefe_almacen') {
-    return users.value.filter((u) => u.role_slug === 'surtidores')
-  }
-  return users.value
-})
+const filteredUsers = computed(() => users.value)
 
 const calendarDays = computed(() => {
   const { start, end } = calendarRange.value
