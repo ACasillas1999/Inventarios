@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   branchesService,
   countsService,
@@ -15,6 +15,26 @@ const auth = useAuthStore()
 const branches = ref<Branch[]>([])
 const connectedBranches = computed(() => branches.value.filter(b => b.status === 'connected'))
 const users = ref<UserOption[]>([])
+
+const filteredUsers = computed(() => {
+  if (!form.branch_id) return users.value
+  const branchId = Number(form.branch_id)
+  return users.value.filter(u => {
+    if (u.role_id === 1) return true // Roles administrativos
+    if (u.branch_id === branchId) return true
+    if (u.branches?.some(b => b.id === branchId)) return true
+    return false
+  })
+})
+
+watch(() => form.branch_id, (newBranchId) => {
+  if (newBranchId && form.responsible_user_id) {
+    const isStillValid = filteredUsers.value.some(u => String(u.id) === String(form.responsible_user_id))
+    if (!isStillValid) {
+      form.responsible_user_id = ''
+    }
+  }
+})
 const loading = ref(false)
 const error = ref('')
 const success = ref('')
@@ -230,7 +250,7 @@ onMounted(async () => {
         <label for="responsable">Responsable</label>
         <select id="responsable" v-model="form.responsible_user_id">
           <option value="">Selecciona</option>
-          <option v-for="user in users" :key="user.id" :value="user.id">
+          <option v-for="user in filteredUsers" :key="user.id" :value="user.id">
             {{ user.name }} ({{ user.email }})
           </option>
         </select>
