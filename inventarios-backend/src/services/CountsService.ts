@@ -225,8 +225,24 @@ export class CountsService {
       throw new Error('Count must be closed')
     }
 
-    const [diffRows] = await this.pool.execute<RowDataPacket[]>(
+    // Para migracion: se crean solicitudes aunque la diferencia sea 0
+    // Para conteos normales: solo se crean si hay diferencia
+    const isMigracion = count.classification === 'migracion'
+
+    const diffQuery = isMigracion
+      ? `
+      SELECT
+        cd.id as count_detail_id,
+        cd.item_code,
+        cd.system_stock,
+        cd.counted_stock,
+        (cd.counted_stock - cd.system_stock) as difference
+      FROM count_details cd
+      WHERE cd.count_id = ?
+        AND cd.counted_stock IS NOT NULL
+      ORDER BY cd.item_code ASC
       `
+      : `
       SELECT
         cd.id as count_detail_id,
         cd.item_code,
@@ -238,9 +254,10 @@ export class CountsService {
         AND cd.counted_stock IS NOT NULL
         AND cd.counted_stock != cd.system_stock
       ORDER BY cd.item_code ASC
-      `,
-      [countId]
-    )
+      `
+
+    const [diffRows] = await this.pool.execute<RowDataPacket[]>(diffQuery, [countId])
+
 
     const differences = diffRows as Array<{
       count_detail_id: number
