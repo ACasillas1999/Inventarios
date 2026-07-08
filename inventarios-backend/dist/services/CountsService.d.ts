@@ -57,10 +57,12 @@ export declare class CountsService {
      */
     listCounts(filters: {
         branch_id?: number;
+        branch_ids?: number[];
         status?: string;
         statuses?: string[];
         type?: string;
         classification?: string;
+        priority?: string;
         responsible_user_id?: number;
         date_from?: string;
         date_to?: string;
@@ -118,7 +120,13 @@ export declare class CountsService {
     /**
      * Lista diferencias registradas en detalles de conteo
      */
-    listDifferences(): Promise<Array<CountDetail & {
+    listDifferences(filters?: {
+        branch_id?: number;
+        classification?: string;
+        responsible_user_id?: number;
+        date_from?: string;
+        date_to?: string;
+    }): Promise<Array<CountDetail & {
         folio: string;
         branch_id: number;
     }>>;

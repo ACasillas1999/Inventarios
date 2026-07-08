@@ -18,7 +18,7 @@ export declare class NotificationService {
     /**
      * Notifica a los suscriptores cuando se crea una solicitud de ajuste/diferencia
      */
-    notifyRequestCreated(folio: string, branchName: string, branchId: number, itemCode: string, difference: number, userName: string, type?: 'count' | 'direct'): Promise<void>;
+    notifyRequestCreated(folio: string, branchName: string, branchId: number, itemCode: string, difference: number, userName: string, type?: 'count' | 'direct' | 'migracion'): Promise<void>;
     /**
      * Obtiene los usuarios suscritos a un evento específico
      */

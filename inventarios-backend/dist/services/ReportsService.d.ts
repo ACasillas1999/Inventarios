@@ -31,17 +31,23 @@ export declare class ReportsService {
      */
     getAuditKPIs(filters: {
         branch_id?: number;
+        classification?: string;
+        responsible_user_id?: number;
         date_from?: string;
         date_to?: string;
     }): Promise<KPIStats>;
     /**
      * Obtiene una vista general de la empresa
      */
-    getCompanyOverview(): Promise<CompanyOverview>;
+    getCompanyOverview(filters?: {
+        only_active?: boolean;
+    }): Promise<CompanyOverview>;
     /**
      * Obtiene el reporte de cobertura jerárquico
      */
-    getCoverageReport(branchId?: number): Promise<CoverageItem[]>;
+    getCoverageReport(branchId?: number, filters?: {
+        only_active?: boolean;
+    }): Promise<CoverageItem[]>;
     /**
      * Estadísticas de líneas (Más contadas y con mayor diferencia)
      */
@@ -64,12 +70,67 @@ export declare class ReportsService {
      */
     getProductivityStats(filters: {
         branch_id?: number;
+        classification?: string;
+        responsible_user_id?: number;
         date_from?: string;
         date_to?: string;
     }): Promise<{
         topSurtidores: any[] | RowDataPacket[];
         topSolicitantes: any[] | RowDataPacket[];
         topRevisores: any[] | RowDataPacket[];
+    }>;
+    /**
+     * Obtiene el reporte de ajustes (diferencias) valorizadas
+     */
+    getAdjustmentsReport(filters: {
+        branch_id?: number;
+        date_from?: string;
+        date_to?: string;
+    }): Promise<any[]>;
+    /**
+     * Obtiene el reporte de tiempos de respuesta por prioridad
+     */
+    getPriorityTimesReport(filters: {
+        branch_id?: number;
+        classification?: string;
+        responsible_user_id?: number;
+        date_from?: string;
+        date_to?: string;
+    }): Promise<{
+        summary: {
+            priority: string;
+            avg_start_minutes: number;
+            avg_start_formatted: string;
+            count_start: number;
+            avg_resolution_minutes: number;
+            avg_resolution_formatted: string;
+            count_resolution: number;
+        }[];
+        counts: {
+            id: any;
+            folio: any;
+            priority: any;
+            classification: any;
+            branch_name: any;
+            responsible_name: any;
+            assigned_at: any;
+            started_at: any;
+            elapsed_minutes: number;
+            elapsed_formatted: string;
+        }[];
+        requests: {
+            id: any;
+            request_folio: any;
+            count_folio: any;
+            priority: any;
+            classification: any;
+            branch_name: any;
+            reviewer_name: any;
+            created_at: any;
+            reviewed_at: any;
+            elapsed_minutes: number;
+            elapsed_formatted: string;
+        }[];
     }>;
 }
 export declare const reportsService: ReportsService;

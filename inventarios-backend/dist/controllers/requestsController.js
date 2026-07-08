@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateRequest = exports.getRequest = exports.listRequests = void 0;
 const RequestsService_1 = __importDefault(require("../services/RequestsService"));
 const logger_1 = require("../utils/logger");
+const database_1 = require("../config/database");
 const requestsService = new RequestsService_1.default();
 const parseNumber = (value) => {
     if (value === undefined || value === null || value === '')
@@ -42,11 +43,26 @@ const listRequests = async (req, res) => {
         const count_id = parseNumber(req.query.count_id);
         const limit = parseNumber(req.query.limit);
         const offset = parseNumber(req.query.offset);
+        const userId = req.user?.id;
+        const roleId = req.user?.role_id;
+        if (!userId || !roleId) {
+            res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
+        let branch_ids = undefined;
+        if (roleId === 2) {
+            const pool = (0, database_1.getLocalPool)();
+            const [rows] = await pool.execute('SELECT branch_id FROM user_branches WHERE user_id = ?', [userId]);
+            branch_ids = rows.map(r => r.branch_id);
+        }
         const result = await requestsService.listRequests({
             status,
             statuses: statuses.length > 1 ? statuses : undefined,
             branch_id,
+            branch_ids,
             count_id,
+            priority: req.query.priority,
+            surtidor_id: roleId === 4 ? userId : undefined,
             limit,
             offset
         });

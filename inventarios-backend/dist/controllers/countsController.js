@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteCount = exports.listDifferences = exports.getDashboardStats = exports.updateCountDetail = exports.addCountDetail = exports.getCountDetails = exports.createRequestsFromCount = exports.updateCount = exports.listCounts = exports.getCountByFolio = exports.getCount = exports.getItemsHistory = exports.createCount = void 0;
 const CountsService_1 = __importDefault(require("../services/CountsService"));
 const logger_1 = require("../utils/logger");
+const database_1 = require("../config/database");
 const countsService = new CountsService_1.default();
 /**
  * Crea un nuevo conteo
@@ -22,6 +23,22 @@ const createCount = async (req, res) => {
         if (!data.branch_id || !data.type || !data.responsible_user_id) {
             res.status(400).json({ error: 'Missing required fields' });
             return;
+        }
+        const roleId = req.user?.role_id;
+        if (roleId) {
+            const [roleRows] = await (0, database_1.getLocalPool)().query('SELECT name FROM roles WHERE id = ?', [roleId]);
+            const roleName = roleRows[0]?.name || '';
+            if (roleName === 'gerente' || roleName === 'auxiliar_gerente') {
+                if (data.classification === 'inventario' || !data.classification) {
+                    res.status(403).json({ error: 'Permisos insuficientes para crear conteos de inventario' });
+                    return;
+                }
+                const [branchRows] = await (0, database_1.getLocalPool)().query('SELECT branch_id FROM user_branches WHERE user_id = ? AND branch_id = ?', [userId, data.branch_id]);
+                if (branchRows.length === 0) {
+                    res.status(403).json({ error: 'No tienes permisos para operar en esta sucursal' });
+                    return;
+                }
+            }
         }
         const counts = await countsService.createCount(userId, data);
         res.status(201).json({
@@ -123,6 +140,12 @@ exports.getCountByFolio = getCountByFolio;
  */
 const listCounts = async (req, res) => {
     try {
+        const userId = req.user?.id;
+        const roleId = req.user?.role_id;
+        if (!userId || !roleId) {
+            res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
         const allowedStatuses = ['pendiente', 'contando', 'contado', 'cerrado', 'cancelado'];
         const rawStatus = req.query.status;
         const statusValues = rawStatus === undefined
@@ -135,15 +158,23 @@ const listCounts = async (req, res) => {
             res.status(400).json({ error: 'Invalid status' });
             return;
         }
+        let branch_ids = undefined;
+        if (roleId === 2) {
+            const pool = (0, database_1.getLocalPool)();
+            const [rows] = await pool.execute('SELECT branch_id FROM user_branches WHERE user_id = ?', [userId]);
+            branch_ids = rows.map(r => r.branch_id);
+        }
         const filters = {
             branch_id: req.query.branch_id ? parseInt(req.query.branch_id) : undefined,
             status: statusValues.length === 1 ? statusValues[0] : undefined,
             statuses: statusValues.length > 1 ? statusValues : undefined,
             type: req.query.type,
             classification: req.query.classification,
-            responsible_user_id: req.query.responsible_user_id
-                ? parseInt(req.query.responsible_user_id)
-                : undefined,
+            priority: req.query.priority,
+            branch_ids,
+            responsible_user_id: roleId === 4
+                ? userId
+                : (req.query.responsible_user_id ? parseInt(req.query.responsible_user_id) : undefined),
             date_from: req.query.date_from,
             date_to: req.query.date_to,
             scheduled_from: req.query.scheduled_from,
@@ -339,9 +370,16 @@ exports.getDashboardStats = getDashboardStats;
  * Lista diferencias de conteos
  * GET /api/counts/differences
  */
-const listDifferences = async (_req, res) => {
+const listDifferences = async (req, res) => {
     try {
-        const diffs = await countsService.listDifferences();
+        const filters = {
+            branch_id: req.query.branch_id ? parseInt(req.query.branch_id) : undefined,
+            classification: req.query.classification,
+            responsible_user_id: req.query.responsible_user_id ? parseInt(req.query.responsible_user_id) : undefined,
+            date_from: req.query.date_from,
+            date_to: req.query.date_to,
+        };
+        const diffs = await countsService.listDifferences(filters);
         res.json(diffs);
     }
     catch (error) {

@@ -378,7 +378,7 @@ export interface Count {
   almacen: number
   type: 'ciclico' | 'por_familia' | 'por_zona' | 'rango' | 'total'
   classification: 'inventario' | 'ajuste' | 'migracion'
-  priority: 'baja' | 'media' | 'alta' | 'urgente'
+  priority: 'baja' | 'media' | 'alta' | 'urgente' | 'mostrador'
   status: 'pendiente' | 'contando' | 'contado' | 'cerrado' | 'cancelado'
   responsible_user_id: number
   created_by_user_id: number
@@ -566,7 +566,7 @@ export interface AdjustmentRequest {
   status: RequestStatus
   count_folio?: string
   count_classification?: 'inventario' | 'ajuste' | 'migracion'
-  count_priority?: 'baja' | 'media' | 'alta' | 'urgente' | string
+  count_priority?: 'baja' | 'media' | 'alta' | 'urgente' | 'mostrador' | string
   warehouse_id?: number
   warehouse_name?: string
   requested_by_user_id: number
@@ -761,6 +761,17 @@ export const reportsService = {
     const response = await api.get(`/reports/adjustments?${params.toString()}`, {
       timeout: STOCK_TIMEOUT_MS
     })
+    return response.data
+  },
+  getPriorityTimesReport: async (filters: { branch_id?: number, classification?: string, responsible_user_id?: number, date_from?: string, date_to?: string }) => {
+    const params = new URLSearchParams()
+    if (filters.branch_id) params.append('branch_id', filters.branch_id.toString())
+    if (filters.classification) params.append('classification', filters.classification)
+    if (filters.responsible_user_id) params.append('responsible_user_id', filters.responsible_user_id.toString())
+    if (filters.date_from) params.append('date_from', filters.date_from)
+    if (filters.date_to) params.append('date_to', filters.date_to)
+
+    const response = await api.get(`/reports/priority-times?${params.toString()}`)
     return response.data
   }
 }

@@ -268,7 +268,8 @@ const priorityLabel: Record<string, string> = {
   baja: 'Baja',
   media: 'Media',
   alta: 'Alta',
-  urgente: 'Urgente'
+  urgente: 'Urgente',
+  mostrador: 'Mostrador'
 }
 
 const almacenLabel = (almacen: number | undefined) => {
@@ -983,7 +984,7 @@ const sortedFilteredCounts = computed(() => {
       if (key === 'warehouse') return (count as any).almacen_nombre || String(count.almacen || '')
       if (key === 'classification') return classificationLabel[count.classification] || count.classification || ''
       if (key === 'priority') {
-        const pWeights: Record<string, number> = { baja: 1, media: 2, alta: 3, urgente: 4 }
+        const pWeights: Record<string, number> = { baja: 1, media: 2, alta: 3, urgente: 4, mostrador: 5 }
         return pWeights[count.priority] || 2
       }
       if (key === 'status') return statusLabel[count.status] || count.status || ''
@@ -1321,6 +1322,7 @@ watch(counts, (newCounts) => {
                 <option value="media">Media</option>
                 <option value="alta">Alta</option>
                 <option value="urgente">Urgente</option>
+                <option value="mostrador">Mostrador</option>
               </select>
             </div>
             <div v-if="viewMode !== 'calendar'">
@@ -1769,6 +1771,7 @@ watch(counts, (newCounts) => {
               <option value="media">Media</option>
               <option value="alta">Alta</option>
               <option value="urgente">Urgente</option>
+              <option value="mostrador">Mostrador</option>
             </select>
           </div>
           <div>
@@ -1989,6 +1992,7 @@ watch(counts, (newCounts) => {
 .priority-badge.media { background: #e0e7ff; color: #4338ca; }
 .priority-badge.alta { background: #fef08a; color: #a16207; }
 .priority-badge.urgente { background: #fee2e2; color: #b91c1c; }
+.priority-badge.mostrador { background: #f3e8ff; color: #7c3aed; }
 
 /* ============================================
    FILTERS TOGGLE (MOBILE)

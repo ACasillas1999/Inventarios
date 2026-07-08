@@ -7,7 +7,7 @@ exports.updateUserNotifications = exports.updateUser = exports.changeUserPasswor
 const UsersService_1 = __importDefault(require("../services/UsersService"));
 const logger_1 = require("../utils/logger");
 const usersService = new UsersService_1.default();
-const listUsers = async (req, res) => {
+const listUsers = async (_req, res) => {
     try {
         const users = await usersService.getAll();
         res.json(users);

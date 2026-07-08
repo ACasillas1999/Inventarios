@@ -5,7 +5,7 @@ const logger_1 = require("../utils/logger");
 /**
  * Middleware para manejo centralizado de errores
  */
-const errorHandler = (err, req, res, next) => {
+const errorHandler = (err, req, res, _next) => {
     // Log del error
     logger_1.logger.error('Error handler:', {
         error: err.message,

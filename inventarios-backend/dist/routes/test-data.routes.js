@@ -11,12 +11,14 @@ const requireAdmin = (req, res, next) => {
     logger_1.logger.info(`Checking admin permissions for user: ${JSON.stringify(req.user)}`);
     if (!req.user) {
         logger_1.logger.warn('No user in request');
-        return res.status(401).json({ error: 'No autenticado.' });
+        res.status(401).json({ error: 'No autenticado.' });
+        return;
     }
     // Asumimos que role_id 1 es administrador
     if (req.user.role_id !== 1) {
         logger_1.logger.warn(`Unauthorized access attempt to test-data by user ${req.user.id} with role_id ${req.user.role_id}`);
-        return res.status(403).json({ error: `Acceso denegado. Solo administradores (Tu role_id: ${req.user.role_id}).` });
+        res.status(403).json({ error: `Acceso denegado. Solo administradores (Tu role_id: ${req.user.role_id}).` });
+        return;
     }
     next();
 };
@@ -39,7 +41,7 @@ function getAnyAvailablePool(connectionManager, preferredBranchId) {
     return { pool: null, branchId: null };
 }
 // GET /api/test-data/stats - Obtener estadísticas de datos de prueba
-router.get('/stats', auth_1.authMiddleware, requireAdmin, async (req, res) => {
+router.get('/stats', auth_1.authMiddleware, requireAdmin, async (_req, res) => {
     logger_1.logger.info('GET /api/test-data/stats requested');
     try {
         const localPool = (0, database_1.getLocalPool)();
@@ -47,7 +49,8 @@ router.get('/stats', auth_1.authMiddleware, requireAdmin, async (req, res) => {
         const { pool: branchPool, branchId } = getAnyAvailablePool(connectionManager, 1);
         if (!branchPool || !branchId) {
             logger_1.logger.error('No connection pools available for any branch');
-            return res.status(500).json({ error: 'No se pudo conectar a ninguna base de datos de sucursal. Verifica las conexiones.' });
+            res.status(500).json({ error: 'No se pudo conectar a ninguna base de datos de sucursal. Verifica las conexiones.' });
+            return;
         }
         // 1. Contar artículos totales en la sucursal (Remoto)
         logger_1.logger.debug(`Querying total articles from branch ${branchId}...`);
@@ -99,14 +102,16 @@ router.post('/seed-coverage', auth_1.authMiddleware, requireAdmin, async (req, r
         const connectionManager = ConnectionManager_1.ConnectionManager.getInstance();
         const { pool: branchPool, branchId } = getAnyAvailablePool(connectionManager, 1);
         if (!branchPool || !branchId) {
-            return res.status(500).json({ error: 'No se pudo conectar a ninguna base de datos de sucursal.' });
+            res.status(500).json({ error: 'No se pudo conectar a ninguna base de datos de sucursal.' });
+            return;
         }
         // Verificar si ya existen datos de prueba
         const [existing] = await localPool.query("SELECT COUNT(*) as count FROM counts WHERE folio LIKE 'TEST-COVERAGE-%' AND branch_id = ?", [branchId]);
         if (existing[0].count > 0) {
-            return res.status(400).json({
+            res.status(400).json({
                 error: 'Ya existen datos de prueba. Elimínalos primero antes de generar nuevos.'
             });
+            return;
         }
         // Obtener estadísticas antes
         const [beforeCounted] = await localPool.query("SELECT COUNT(DISTINCT item_code) as counted FROM count_details cd JOIN counts c ON cd.count_id = c.id WHERE c.branch_id = ?", [branchId]);
@@ -218,14 +223,15 @@ router.post('/seed-coverage', auth_1.authMiddleware, requireAdmin, async (req, r
     }
 });
 // DELETE /api/test-data/cleanup-coverage - Limpiar datos de prueba
-router.delete('/cleanup-coverage', auth_1.authMiddleware, requireAdmin, async (req, res) => {
+router.delete('/cleanup-coverage', auth_1.authMiddleware, requireAdmin, async (_req, res) => {
     logger_1.logger.info('DELETE /api/test-data/cleanup-coverage requested');
     try {
         const localPool = (0, database_1.getLocalPool)();
         const connectionManager = ConnectionManager_1.ConnectionManager.getInstance();
         const { pool: branchPool, branchId } = getAnyAvailablePool(connectionManager, 1);
         if (!branchPool || !branchId) {
-            return res.status(500).json({ error: 'No se pudo conectar a ninguna sucursal.' });
+            res.status(500).json({ error: 'No se pudo conectar a ninguna sucursal.' });
+            return;
         }
         // Contar registros antes de eliminar
         const [countDetailsCount] = await localPool.query("SELECT COUNT(*) as count FROM count_details WHERE count_id IN (SELECT id FROM counts WHERE folio LIKE 'TEST-COVERAGE-%' AND branch_id = ?)", [branchId]);
@@ -233,9 +239,10 @@ router.delete('/cleanup-coverage', auth_1.authMiddleware, requireAdmin, async (r
         const detailsToDelete = countDetailsCount[0].count;
         const countsToDelete = countsCount[0].count;
         if (countsToDelete === 0) {
-            return res.status(404).json({
+            res.status(404).json({
                 error: 'No se encontraron datos de prueba para eliminar'
             });
+            return;
         }
         // Eliminar detalles
         await localPool.query("DELETE FROM count_details WHERE count_id IN (SELECT id FROM counts WHERE folio LIKE 'TEST-COVERAGE-%' AND branch_id = ?)", [branchId]);

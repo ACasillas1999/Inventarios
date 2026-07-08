@@ -110,4 +110,27 @@ export const getAdjustmentsReport = async (req: AuthRequest, res: Response): Pro
     }
 }
 
-export default { getAuditKPIs, getCompanyOverview, getCoverageReport, getLineStats, getProductivityStats, getAdjustmentsReport }
+export const getPriorityTimesReport = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined
+        const classification = req.query.classification as string
+        const responsibleUserId = req.query.responsible_user_id ? parseInt(req.query.responsible_user_id as string) : undefined
+        const dateFrom = req.query.date_from as string
+        const dateTo = req.query.date_to as string
+
+        const report = await reportsService.getPriorityTimesReport({
+            branch_id: branchId,
+            classification,
+            responsible_user_id: responsibleUserId,
+            date_from: dateFrom,
+            date_to: dateTo
+        })
+
+        res.json(report)
+    } catch (error) {
+        logger.error('Get Priority Times Report error:', error)
+        res.status(500).json({ error: 'Failed to generate priority times report' })
+    }
+}
+
+export default { getAuditKPIs, getCompanyOverview, getCoverageReport, getLineStats, getProductivityStats, getAdjustmentsReport, getPriorityTimesReport }

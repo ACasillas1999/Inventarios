@@ -18,7 +18,8 @@ export type RequestRow = {
     evidence_file: string | null;
     warehouse_id?: number;
     warehouse_name?: string;
-    count_classification?: 'inventario' | 'ajuste';
+    count_classification?: 'inventario' | 'ajuste' | 'migracion';
+    count_priority?: 'baja' | 'media' | 'alta' | 'urgente' | 'mostrador' | string;
     requested_by_name?: string | null;
     reviewed_by_name?: string | null;
     created_at: string;
@@ -31,7 +32,10 @@ export declare class RequestsService {
         status?: RequestStatus;
         statuses?: RequestStatus[];
         branch_id?: number;
+        branch_ids?: number[];
         count_id?: number;
+        surtidor_id?: number;
+        priority?: string;
         limit?: number;
         offset?: number;
     }): Promise<{

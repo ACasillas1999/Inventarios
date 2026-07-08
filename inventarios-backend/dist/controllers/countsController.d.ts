@@ -59,7 +59,7 @@ export declare const getDashboardStats: (_req: AuthRequest, res: Response) => Pr
  * Lista diferencias de conteos
  * GET /api/counts/differences
  */
-export declare const listDifferences: (_req: AuthRequest, res: Response) => Promise<void>;
+export declare const listDifferences: (req: AuthRequest, res: Response) => Promise<void>;
 /**
  * Elimina un conteo
  * DELETE /api/counts/:id
@@ -77,7 +77,7 @@ declare const _default: {
     addCountDetail: (req: AuthRequest, res: Response) => Promise<void>;
     updateCountDetail: (req: AuthRequest, res: Response) => Promise<void>;
     getDashboardStats: (_req: AuthRequest, res: Response) => Promise<void>;
-    listDifferences: (_req: AuthRequest, res: Response) => Promise<void>;
+    listDifferences: (req: AuthRequest, res: Response) => Promise<void>;
     deleteCount: (req: AuthRequest, res: Response) => Promise<void>;
 };
 export default _default;

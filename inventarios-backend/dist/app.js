@@ -38,7 +38,6 @@ const test_data_routes_1 = __importDefault(require("./routes/test-data.routes"))
 // Constantes
 const PORT = parseInt(process.env.PORT || '3000');
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 /**
  * Inicializa la aplicación Express
  */
@@ -48,7 +47,7 @@ const createApp = () => {
     app.use((0, helmet_1.default)());
     app.use((0, compression_1.default)());
     app.use((0, cors_1.default)({
-        origin: CORS_ORIGIN,
+        origin: true, // Accepts any origin dynamically
         credentials: true
     }));
     app.use(express_1.default.json({ limit: '10mb' }));
@@ -117,6 +116,18 @@ const initializeDatabases = async () => {
         const localPool = (0, database_1.getLocalPool)();
         await localPool.query('SELECT 1');
         logger_1.logger.info('Local database connected successfully');
+        try {
+            await localPool.query("ALTER TABLE counts MODIFY COLUMN classification ENUM('inventario', 'ajuste', 'migracion') NOT NULL DEFAULT 'inventario'");
+            logger_1.logger.info('Migration for classification ENUM executed successfully');
+            const rolesSql = `INSERT IGNORE INTO roles (name, display_name, description, permissions, created_at, updated_at) VALUES 
+        ('gerente', 'Gerente', 'Gerente de sucursal', '["counts.view", "counts.create"]', NOW(), NOW()),
+        ('auxiliar_gerente', 'Auxiliar de Gerente', 'Auxiliar de gerente de sucursal', '["counts.view", "counts.create"]', NOW(), NOW())`;
+            await localPool.query(rolesSql);
+            logger_1.logger.info('Roles migration for Gerente and Auxiliar executed successfully');
+        }
+        catch (err) {
+            logger_1.logger.warn('Migration warning:', err.message);
+        }
         // Inicializar conexiones a sucursales
         const branchDatabases = await (0, database_1.getBranchDatabases)();
         if (branchDatabases.length === 0) {
@@ -170,8 +181,7 @@ const startServer = async () => {
         else {
             logger_1.logger.info('WebSocket server disabled');
         }
-        // Iniciar servidor
-        httpServer.listen(PORT, () => {
+        httpServer.listen(PORT, '0.0.0.0', () => {
             logger_1.logger.info(`🚀 Server running on http://localhost:${PORT}`);
             logger_1.logger.info(`📊 Health check: http://localhost:${PORT}/health`);
             if (wsEnabled) {

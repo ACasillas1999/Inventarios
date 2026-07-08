@@ -66,8 +66,8 @@ export interface Count {
     branch_id: number;
     almacen: number;
     type: 'ciclico' | 'por_familia' | 'por_zona' | 'rango' | 'total';
-    classification: 'inventario' | 'ajuste';
-    priority: 'baja' | 'media' | 'alta' | 'urgente';
+    classification: 'inventario' | 'ajuste' | 'migracion';
+    priority: 'baja' | 'media' | 'alta' | 'urgente' | 'mostrador';
     status: 'pendiente' | 'contando' | 'contado' | 'cerrado' | 'cancelado';
     responsible_user_id: number;
     created_by_user_id: number;
@@ -153,8 +153,8 @@ export interface CreateCountRequest {
     branch_id: number;
     almacen?: number;
     type: 'ciclico' | 'por_familia' | 'por_zona' | 'rango' | 'total';
-    classification?: 'inventario' | 'ajuste';
-    priority?: 'baja' | 'media' | 'alta' | 'urgente';
+    classification?: 'inventario' | 'ajuste' | 'migracion';
+    priority?: 'baja' | 'media' | 'alta' | 'urgente' | 'mostrador';
     responsible_user_id: number;
     scheduled_date?: string;
     notes?: string;

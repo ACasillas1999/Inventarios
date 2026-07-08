@@ -6,7 +6,7 @@ export interface ApiError extends Error {
 /**
  * Middleware para manejo centralizado de errores
  */
-export declare const errorHandler: (err: ApiError, req: Request, res: Response, next: NextFunction) => void;
+export declare const errorHandler: (err: ApiError, req: Request, res: Response, _next: NextFunction) => void;
 /**
  * Middleware para rutas no encontradas
  */

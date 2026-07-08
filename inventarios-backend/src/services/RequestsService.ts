@@ -52,7 +52,7 @@ export type RequestRow = {
   warehouse_id?: number
   warehouse_name?: string
   count_classification?: 'inventario' | 'ajuste' | 'migracion'
-  count_priority?: 'baja' | 'media' | 'alta' | 'urgente' | string
+  count_priority?: 'baja' | 'media' | 'alta' | 'urgente' | 'mostrador' | string
   requested_by_name?: string | null
   reviewed_by_name?: string | null
   created_at: string

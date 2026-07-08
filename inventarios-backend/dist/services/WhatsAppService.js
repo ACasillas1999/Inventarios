@@ -27,7 +27,7 @@ class WhatsAppService {
                 type: "template",
                 template: {
                     name: templateName,
-                    language: { code: "en_US" }
+                    language: { code: "es_MX" }
                 }
             };
             // Only add components if they are not empty
@@ -69,15 +69,14 @@ class WhatsAppService {
         const details = [];
         // Construir el cuerpo del mensaje
         const messageBody = this.buildCountAlertMessage(alertData);
-        // Estructura con parámetros
         const componentsWithParams = [
             {
                 type: "body",
                 parameters: [
-                    {
-                        type: "text",
-                        text: messageBody.substring(0, 1024)
-                    }
+                    { type: "text", text: alertData.folio },
+                    { type: "text", text: alertData.branchName },
+                    { type: "text", text: alertData.lineName },
+                    { type: "text", text: messageBody.substring(0, 1024) }
                 ]
             }
         ];
@@ -88,24 +87,7 @@ class WhatsAppService {
             if (finalNumber.length === 10) {
                 finalNumber = '52' + finalNumber;
             }
-            // Intento 1: Con parámetros
-            let result = await this.sendTemplate(finalNumber, 'ga_notificarchofer', componentsWithParams);
-            // Intento 2 (Fallback): Sin parámetros (si la plantilla no los acepta)
-            if (!result.success) {
-                logger_1.logger.warn(`[WhatsApp] Failed with params for ${finalNumber}. Retrying without params...`);
-                const retryResult = await this.sendTemplate(finalNumber, 'ga_notificarchofer', []);
-                if (retryResult.success) {
-                    result = {
-                        success: true,
-                        messageId: retryResult.messageId,
-                        error: `Sent without params (Initial error: ${result.error})`
-                    };
-                }
-                else {
-                    // Update error to show both failures
-                    result.error = `1. With params: ${result.error} | 2. No params: ${retryResult.error}`;
-                }
-            }
+            const result = await this.sendTemplate(finalNumber, 'inventario_alerta_linea', componentsWithParams);
             details.push({
                 number: finalNumber,
                 originalNumber: phoneNumber,

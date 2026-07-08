@@ -52,6 +52,10 @@ export declare const emitToRole: (roleId: number, event: string, data: any) => v
  * Emite un evento cuando se reasigna un conteo
  */
 export declare const emitCountReassigned: (countId: number, folio: string, oldResponsibleId: number, newResponsibleId: number) => void;
+/**
+ * Emite un nuevo comentario de solicitud a todos los usuarios en la sala de esa solicitud
+ */
+export declare const emitRequestComment: (requestId: number, comment: any) => void;
 declare const _default: {
     initializeWebSocket: (httpServer: HTTPServer) => SocketIOServer;
     getWebSocketServer: () => SocketIOServer | null;
@@ -63,6 +67,7 @@ declare const _default: {
     emitCountStatusChanged: (countId: number, folio: string, oldStatus: string, newStatus: string) => void;
     emitCountDetailAdded: (countId: number, detail: any) => void;
     emitCountReassigned: (countId: number, folio: string, oldResponsibleId: number, newResponsibleId: number) => void;
+    emitRequestComment: (requestId: number, comment: any) => void;
     emitToRoom: (room: string, event: string, data: any) => void;
     emitToUser: (userId: number, event: string, data: any) => void;
     emitToRole: (roleId: number, event: string, data: any) => void;

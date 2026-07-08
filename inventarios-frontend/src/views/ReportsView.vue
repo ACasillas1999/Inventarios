@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { branchesService, countsService, usersService, reportsService, auditService, type Branch, type UserOption } from '@/services/api'
 import MobileMenuToggle from '@/components/MobileMenuToggle.vue'
-import { IconChartBar, IconChartPie, IconTrophy, IconUserCheck, IconAdjustments, IconClock, IconHistory, IconChevronRight } from '@tabler/icons-vue'
+import { IconChartBar, IconChartPie, IconTrophy, IconUserCheck, IconAdjustments, IconClock, IconHistory, IconChevronRight, IconAlertTriangle } from '@tabler/icons-vue'
 
 const branches = ref<Branch[]>([])
 const connectedBranches = computed(() => branches.value.filter(b => b.status === 'connected'))
@@ -150,12 +150,203 @@ const loadProductivity = async () => {
     }
 }
 
+const priorityTimes = ref<any>(null)
+const loadingPriorityTimes = ref(false)
+
+const loadPriorityTimes = async () => {
+    try {
+        loadingPriorityTimes.value = true
+        const params: any = {}
+        if (filters.branch_id) params.branch_id = Number(filters.branch_id)
+        if (filters.classification) params.classification = filters.classification
+        if (filters.responsible_user_id) params.responsible_user_id = Number(filters.responsible_user_id)
+        if (filters.date_from) params.date_from = filters.date_from
+        if (filters.date_to) params.date_to = filters.date_to
+        priorityTimes.value = await reportsService.getPriorityTimesReport(params)
+    } catch (err) {
+        console.error('Error loading priority times', err)
+    } finally {
+        loadingPriorityTimes.value = false
+    }
+}
+
+const getDurationClass = (minutes: number, priority: string) => {
+  const prio = (priority || 'media').toLowerCase()
+  if (prio === 'urgente' || prio === 'mostrador') {
+    if (minutes > 180) return 'text-danger'
+    if (minutes > 60) return 'text-warning'
+  } else if (prio === 'alta') {
+    if (minutes > 240) return 'text-danger'
+    if (minutes > 120) return 'text-warning'
+  } else {
+    if (minutes > 480) return 'text-danger'
+    if (minutes > 240) return 'text-warning'
+  }
+  return 'text-success'
+}
+
+const formatMinutes = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  if (hours === 0) return `${mins}m`
+  return `${hours}h ${mins}m`
+}
+
+const selectedSurtidorFilter = ref('')
+const selectedRevisorFilter = ref('')
+
+const toggleSurtidorFilter = (name: string) => {
+  if (selectedSurtidorFilter.value === name) {
+    selectedSurtidorFilter.value = ''
+  } else {
+    selectedSurtidorFilter.value = name
+  }
+}
+
+const toggleRevisorFilter = (name: string) => {
+  if (selectedRevisorFilter.value === name) {
+    selectedRevisorFilter.value = ''
+  } else {
+    selectedRevisorFilter.value = name
+  }
+}
+
+const surtidoresAverages = computed(() => {
+  if (!priorityTimes.value?.counts) return []
+  const map = new Map<string, { total_minutes: number; count: number; priorities: Record<string, { total: number; count: number }> }>()
+  
+  priorityTimes.value.counts.forEach((count: any) => {
+    const user = count.responsible_name || 'Sin asignar'
+    const current = map.get(user) || { 
+      total_minutes: 0, 
+      count: 0, 
+      priorities: {
+        baja: { total: 0, count: 0 },
+        media: { total: 0, count: 0 },
+        alta: { total: 0, count: 0 },
+        urgente: { total: 0, count: 0 },
+        mostrador: { total: 0, count: 0 }
+      }
+    }
+    current.total_minutes += count.elapsed_minutes
+    current.count += 1
+    
+    const prio = (count.priority || 'media').toLowerCase()
+    if (current.priorities[prio]) {
+      current.priorities[prio].total += count.elapsed_minutes
+      current.priorities[prio].count += 1
+    }
+    map.set(user, current)
+  })
+  
+  return Array.from(map.entries()).map(([name, data]) => {
+    const avg = Math.floor(data.total_minutes / data.count)
+    
+    const priorityMap: Record<string, { count: number; avg_formatted: string }> = {}
+    Object.entries(data.priorities).forEach(([prio, pStats]) => {
+      if (pStats.count > 0) {
+        const pAvg = Math.floor(pStats.total / pStats.count)
+        priorityMap[prio] = {
+          count: pStats.count,
+          avg_formatted: formatMinutes(pAvg)
+        }
+      }
+    })
+      
+    return {
+      name,
+      avg_minutes: avg,
+      avg_formatted: formatMinutes(avg),
+      count: data.count,
+      priorityMap
+    }
+  }).sort((a, b) => a.avg_minutes - b.avg_minutes)
+})
+
+const revisoresAverages = computed(() => {
+  if (!priorityTimes.value?.requests) return []
+  const map = new Map<string, { total_minutes: number; count: number; priorities: Record<string, { total: number; count: number }> }>()
+  
+  priorityTimes.value.requests.forEach((req: any) => {
+    const user = req.reviewer_name || 'Sistema'
+    const current = map.get(user) || { 
+      total_minutes: 0, 
+      count: 0, 
+      priorities: {
+        baja: { total: 0, count: 0 },
+        media: { total: 0, count: 0 },
+        alta: { total: 0, count: 0 },
+        urgente: { total: 0, count: 0 },
+        mostrador: { total: 0, count: 0 }
+      }
+    }
+    current.total_minutes += req.elapsed_minutes
+    current.count += 1
+    
+    const prio = (req.priority || 'media').toLowerCase()
+    if (current.priorities[prio]) {
+      current.priorities[prio].total += req.elapsed_minutes
+      current.priorities[prio].count += 1
+    }
+    map.set(user, current)
+  })
+  
+  return Array.from(map.entries()).map(([name, data]) => {
+    const avg = Math.floor(data.total_minutes / data.count)
+    
+    const priorityMap: Record<string, { count: number; avg_formatted: string }> = {}
+    Object.entries(data.priorities).forEach(([prio, pStats]) => {
+      if (pStats.count > 0) {
+        const pAvg = Math.floor(pStats.total / pStats.count)
+        priorityMap[prio] = {
+          count: pStats.count,
+          avg_formatted: formatMinutes(pAvg)
+        }
+      }
+    })
+      
+    return {
+      name,
+      avg_minutes: avg,
+      avg_formatted: formatMinutes(avg),
+      count: data.count,
+      priorityMap
+    }
+  }).sort((a, b) => a.avg_minutes - b.avg_minutes)
+})
+
+const filteredCounts = computed(() => {
+  if (!priorityTimes.value?.counts) return []
+  if (!selectedSurtidorFilter.value) return priorityTimes.value.counts
+  return priorityTimes.value.counts.filter((c: any) => c.responsible_name === selectedSurtidorFilter.value)
+})
+
+const filteredRequests = computed(() => {
+  if (!priorityTimes.value?.requests) return []
+  if (!selectedRevisorFilter.value) return priorityTimes.value.requests
+  return priorityTimes.value.requests.filter((r: any) => r.reviewer_name === selectedRevisorFilter.value)
+})
+
+const countsByPriority = computed(() => {
+  const countsMap = { baja: 0, media: 0, alta: 0, urgente: 0, mostrador: 0 }
+  counts.value.forEach((c: any) => {
+    const prio = (c.priority || 'media').toLowerCase() as keyof typeof countsMap
+    if (prio in countsMap) {
+      countsMap[prio]++
+    }
+  })
+  return Object.entries(countsMap)
+    .filter(([_, count]) => count > 0)
+    .map(([prio, count]) => ({ priority: prio, count }))
+})
+
 const applyFilters = () => {
     loadCounts()
     loadDiffs()
     loadKPIs()
     loadProductivity()
     loadAuditLogs()
+    loadPriorityTimes()
 }
 
 const updateIsMobile = () => {
@@ -235,7 +426,7 @@ onMounted(async () => {
     updateIsMobile()
     window.addEventListener('resize', updateIsMobile)
     await Promise.all([loadBranches(), loadUsers()])
-    await Promise.all([loadCounts(), loadDiffs(), loadKPIs(), loadProductivity()])
+    await Promise.all([loadCounts(), loadDiffs(), loadKPIs(), loadProductivity(), loadPriorityTimes()])
 })
 
 onBeforeUnmount(() => {
@@ -317,10 +508,24 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else class="panel-grid">
-      <div v-for="metric in summaryCards" :key="metric.label" class="panel">
-        <p class="eyebrow">{{ metric.label }}</p>
-        <h2>{{ metric.value }}</h2>
-        <p class="muted">{{ metric.note }}</p>
+      <div v-for="metric in summaryCards" :key="metric.label" class="panel" style="display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <p class="eyebrow">{{ metric.label }}</p>
+          <h2>{{ metric.value }}</h2>
+          <p class="muted" style="margin-bottom: 0.5rem;">{{ metric.note }}</p>
+        </div>
+        <!-- Desglose por prioridad para el total de conteos realizados -->
+        <div v-if="metric.label === 'Conteos realizados' && countsByPriority.length" class="priority-breakdown" style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; border-top: 1px solid var(--line); padding-top: 0.5rem;">
+          <span 
+            v-for="item in countsByPriority" 
+            :key="item.priority" 
+            class="tag-prio mini" 
+            :class="item.priority"
+            style="font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem;"
+          >
+            {{ item.priority.toUpperCase() }}: {{ item.count }}
+          </span>
+        </div>
       </div>
     </div>
 
@@ -331,6 +536,9 @@ onBeforeUnmount(() => {
       </button>
       <button :class="{ active: activeTab === 'productivity' }" @click="activeTab = 'productivity'">
         <IconChartBar :size="18" /> Productividad de Equipo
+      </button>
+      <button :class="{ active: activeTab === 'priority_times' }" @click="activeTab = 'priority_times'">
+        <IconAlertTriangle :size="18" /> Tiempos por Prioridad
       </button>
     </div>
 
@@ -569,6 +777,249 @@ onBeforeUnmount(() => {
         </section>
       </div>
     </div>
+
+    <!-- Pestaña 3: Tiempos por Prioridad -->
+    <div v-if="activeTab === 'priority_times'" class="tab-content animate-fade">
+      <div style="margin-top: 0.5rem;">
+        <p class="eyebrow" style="margin-bottom: 0.75rem;">⏱️ Tiempos Promedio por Prioridad (Horas Laborales)</p>
+        <div v-if="loadingPriorityTimes" class="muted">Calculando tiempos por prioridad...</div>
+        <div v-else-if="priorityTimes?.summary" class="panel-grid">
+          <div v-for="item in priorityTimes.summary" :key="item.priority" class="panel kpi-card" :class="'prio-' + item.priority">
+            <span class="tag-prio" :class="item.priority">{{ item.priority }}</span>
+            <div style="margin-top: 0.5rem;">
+              <p class="eyebrow">⏳ Inicio de conteo</p>
+              <h3>{{ item.avg_start_formatted }}</h3>
+              <p class="muted">Asignado ➔ Inicia ({{ item.count_start }} conteos)</p>
+            </div>
+            <div style="margin-top: 0.75rem; border-top: 1px solid var(--line); padding-top: 0.5rem;">
+              <p class="eyebrow">⚙️ Resolución de Ajuste</p>
+              <h3>{{ item.avg_resolution_formatted }}</h3>
+              <p class="muted">Solicitud ➔ Resuelta ({{ item.count_resolution }} solicitudes)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Promedios por Usuario -->
+      <div v-if="!loadingPriorityTimes && (surtidoresAverages.length || revisoresAverages.length)" class="panel-grid wide" style="margin-top: 1.5rem">
+        <!-- Tabla Promedios Surtidores -->
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Surtidores</p>
+              <h3>Promedio de Inicio por Surtidor</h3>
+              <p class="muted">Tiempos promedio en iniciar conteo. Haz clic en una fila para filtrar el desglose abajo.</p>
+            </div>
+            <span class="tag info">Surtidores</span>
+          </div>
+          <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+            <table class="table hoverable">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th style="text-align: right;">Conteos</th>
+                  <th style="text-align: right;">Tiempo Promedio</th>
+                  <th style="text-align: right; min-width: 75px;">Baja</th>
+                  <th style="text-align: right; min-width: 75px;">Media</th>
+                  <th style="text-align: right; min-width: 75px;">Alta</th>
+                  <th style="text-align: right; min-width: 75px;">Urgente</th>
+                  <th style="text-align: right; min-width: 75px;">Mostrador</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr 
+                  v-for="user in surtidoresAverages" 
+                  :key="user.name"
+                  :class="{ 'row-active': selectedSurtidorFilter === user.name }"
+                  @click="toggleSurtidorFilter(user.name)"
+                  style="cursor: pointer;"
+                >
+                  <td>
+                    <strong>{{ user.name }}</strong>
+                    <span v-if="selectedSurtidorFilter === user.name" class="active-dot">●</span>
+                  </td>
+                  <td style="text-align: right;">{{ user.count }}</td>
+                  <td style="text-align: right; font-weight: 600;">{{ user.avg_formatted }}</td>
+                  
+                  <!-- Columnas de prioridad -->
+                  <td v-for="prio in ['baja', 'media', 'alta', 'urgente', 'mostrador']" :key="prio" style="text-align: right;">
+                    <div v-if="user.priorityMap[prio]">
+                      <span class="tag-prio mini" :class="prio" style="font-size: 0.65rem; font-weight: 700; padding: 0.05rem 0.2rem; display: inline-block; margin-bottom: 0.15rem;">
+                        {{ user.priorityMap[prio].avg_formatted }}
+                      </span>
+                      <div class="muted" style="font-size: 0.65rem; line-height: 1;">({{ user.priorityMap[prio].count }})</div>
+                    </div>
+                    <span v-else class="muted" style="font-size: 0.75rem;">-</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="selectedSurtidorFilter" class="panel-footer" style="padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); background: var(--panel-muted, rgba(0,0,0,0.02));">
+            <span class="muted" style="font-size: 0.8rem;">Filtrando detalle por: <strong>{{ selectedSurtidorFilter }}</strong></span>
+            <button class="btn ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" @click.stop="selectedSurtidorFilter = ''">Limpiar</button>
+          </div>
+        </section>
+
+        <!-- Tabla Promedios Revisores -->
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Revisores</p>
+              <h3>Promedio de Resolución por Revisor</h3>
+              <p class="muted">Tiempos promedio en autorizar/rechazar ajustes. Haz clic en una fila para filtrar el desglose abajo.</p>
+            </div>
+            <span class="tag accent">Revisores</span>
+          </div>
+          <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+            <table class="table hoverable">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th style="text-align: right;">Ajustes</th>
+                  <th style="text-align: right;">Tiempo Promedio</th>
+                  <th style="text-align: right; min-width: 75px;">Baja</th>
+                  <th style="text-align: right; min-width: 75px;">Media</th>
+                  <th style="text-align: right; min-width: 75px;">Alta</th>
+                  <th style="text-align: right; min-width: 75px;">Urgente</th>
+                  <th style="text-align: right; min-width: 75px;">Mostrador</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr 
+                  v-for="user in revisoresAverages" 
+                  :key="user.name"
+                  :class="{ 'row-active': selectedRevisorFilter === user.name }"
+                  @click="toggleRevisorFilter(user.name)"
+                  style="cursor: pointer;"
+                >
+                  <td>
+                    <strong>{{ user.name }}</strong>
+                    <span v-if="selectedRevisorFilter === user.name" class="active-dot">●</span>
+                  </td>
+                  <td style="text-align: right;">{{ user.count }}</td>
+                  <td style="text-align: right; font-weight: 600;">{{ user.avg_formatted }}</td>
+                  
+                  <!-- Columnas de prioridad -->
+                  <td v-for="prio in ['baja', 'media', 'alta', 'urgente', 'mostrador']" :key="prio" style="text-align: right;">
+                    <div v-if="user.priorityMap[prio]">
+                      <span class="tag-prio mini" :class="prio" style="font-size: 0.65rem; font-weight: 700; padding: 0.05rem 0.2rem; display: inline-block; margin-bottom: 0.15rem;">
+                        {{ user.priorityMap[prio].avg_formatted }}
+                      </span>
+                      <div class="muted" style="font-size: 0.65rem; line-height: 1;">({{ user.priorityMap[prio].count }})</div>
+                    </div>
+                    <span v-else class="muted" style="font-size: 0.75rem;">-</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="selectedRevisorFilter" class="panel-footer" style="padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); background: var(--panel-muted, rgba(0,0,0,0.02));">
+            <span class="muted" style="font-size: 0.8rem;">Filtrando detalle por: <strong>{{ selectedRevisorFilter }}</strong></span>
+            <button class="btn ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" @click.stop="selectedRevisorFilter = ''">Limpiar</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Detalle de Tiempos -->
+      <div class="panel-grid wide" style="margin-top: 1.5rem">
+        <!-- Tabla Detalle de Conteos -->
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Detalle de Conteos</p>
+              <h3>Tiempos de Inicio de Conteo</h3>
+              <p class="muted">Tiempos individuales transcurridos desde que se asigna hasta que inicia.</p>
+            </div>
+            <span class="tag info">Conteos</span>
+          </div>
+          
+          <div v-if="loadingPriorityTimes" class="muted">Cargando detalles...</div>
+          <div v-else class="table-container" style="max-height: 650px; overflow-y: auto;">
+            <table class="table">
+              <thead style="position: sticky; top: 0; background: var(--surface); z-index: 10;">
+                <tr>
+                  <th>Folio</th>
+                  <th>Sucursal</th>
+                  <th>Prioridad</th>
+                  <th>Responsable</th>
+                  <th>Asignado</th>
+                  <th>Iniciado</th>
+                  <th style="text-align: right;">Tiempo Neto</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="count in filteredCounts" :key="count.id">
+                  <td>{{ count.folio }}</td>
+                  <td>{{ count.branch_name }}</td>
+                  <td>
+                    <span class="tag-prio mini" :class="count.priority.toLowerCase()">{{ count.priority }}</span>
+                  </td>
+                  <td><strong>{{ count.responsible_name }}</strong></td>
+                  <td class="text-nowrap muted">{{ count.assigned_at ? new Date(count.assigned_at).toLocaleString() : '-' }}</td>
+                  <td class="text-nowrap muted">{{ count.started_at ? new Date(count.started_at).toLocaleString() : '-' }}</td>
+                  <td style="text-align: right; font-weight: bold;" :class="getDurationClass(count.elapsed_minutes, count.priority)">
+                    {{ count.elapsed_formatted }}
+                  </td>
+                </tr>
+                <tr v-if="!filteredCounts.length">
+                  <td colspan="7" class="muted text-center" style="padding: 2rem;">Sin datos en el rango seleccionado</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Tabla Detalle de Solicitudes -->
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Detalle de Ajustes</p>
+              <h3>Tiempos de Resolución de Solicitudes</h3>
+              <p class="muted">Tiempos individuales transcurridos desde que se reporta la diferencia hasta su revisión.</p>
+            </div>
+            <span class="tag accent">Ajustes</span>
+          </div>
+
+          <div v-if="loadingPriorityTimes" class="muted">Cargando detalles...</div>
+          <div v-else class="table-container" style="max-height: 650px; overflow-y: auto;">
+            <table class="table">
+              <thead style="position: sticky; top: 0; background: var(--surface); z-index: 10;">
+                <tr>
+                  <th>Solicitud</th>
+                  <th>Conteo</th>
+                  <th>Sucursal</th>
+                  <th>Prioridad</th>
+                  <th>Revisor</th>
+                  <th>Creada</th>
+                  <th>Resuelta</th>
+                  <th style="text-align: right;">Tiempo Neto</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="req in filteredRequests" :key="req.id">
+                  <td>{{ req.request_folio }}</td>
+                  <td>{{ req.count_folio }}</td>
+                  <td>{{ req.branch_name }}</td>
+                  <td>
+                    <span class="tag-prio mini" :class="req.priority.toLowerCase()">{{ req.priority }}</span>
+                  </td>
+                  <td><strong>{{ req.reviewer_name }}</strong></td>
+                  <td class="text-nowrap muted">{{ req.created_at ? new Date(req.created_at).toLocaleString() : '-' }}</td>
+                  <td class="text-nowrap muted">{{ req.reviewed_at ? new Date(req.reviewed_at).toLocaleString() : '-' }}</td>
+                  <td style="text-align: right; font-weight: bold;" :class="getDurationClass(req.elapsed_minutes, req.priority)">
+                    {{ req.elapsed_formatted }}
+                  </td>
+                </tr>
+                <tr v-if="!filteredRequests.length">
+                  <td colspan="8" class="muted text-center" style="padding: 2rem;">Sin datos en el rango seleccionado</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
   </section>
 
   <!-- Bitácora (Fuera de las pestañas porque es general) -->
@@ -803,4 +1254,87 @@ onBeforeUnmount(() => {
 }
 
 .no-border { border: none !important; }
+
+.tag-prio {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.tag-prio.urgente {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.tag-prio.mostrador {
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.tag-prio.alta {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.tag-prio.media {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.tag-prio.baja {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+  border: 1px solid rgba(107, 114, 128, 0.2);
+}
+
+.tag-prio.mini {
+  padding: 0.1rem 0.35rem;
+  font-size: 0.7rem;
+}
+
+/* Estilos de tarjetas de KPIs por prioridad */
+.kpi-card.prio-urgente {
+  border-left: 4px solid #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.02), var(--surface));
+}
+.kpi-card.prio-mostrador {
+  border-left: 4px solid #8b5cf6;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.02), var(--surface));
+}
+.kpi-card.prio-alta {
+  border-left: 4px solid #f59e0b;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.02), var(--surface));
+}
+.kpi-card.prio-media {
+  border-left: 4px solid #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.02), var(--surface));
+}
+.kpi-card.prio-baja {
+  border-left: 4px solid #6b7280;
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.02), var(--surface));
+}
+
+.table.hoverable tbody tr:hover {
+  background: var(--accent-soft, rgba(37, 99, 235, 0.05));
+}
+.row-active {
+  background: var(--accent-soft, rgba(37, 99, 235, 0.08)) !important;
+  color: var(--accent, #2563eb);
+}
+.active-dot {
+  color: var(--accent, #2563eb);
+  font-size: 1.15rem;
+  margin-left: 0.25rem;
+  display: inline-block;
+  line-height: 1;
+  vertical-align: middle;
+}
 </style>

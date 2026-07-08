@@ -75,7 +75,8 @@ const priorityLabel: Record<string, string> = {
   baja: 'Baja',
   media: 'Media',
   alta: 'Alta',
-  urgente: 'Urgente'
+  urgente: 'Urgente',
+  mostrador: 'Mostrador'
 }
 
 const statusClass = (status: string) => {
@@ -170,7 +171,7 @@ const sortedRequests = computed(() => {
       if (key === 'branch') return branchName(row.branch_id)
       if (key === 'count') return row.count_folio || String(row.count_id || '')
       if (key === 'priority') {
-        const pWeights: Record<string, number> = { baja: 1, media: 2, alta: 3, urgente: 4 }
+        const pWeights: Record<string, number> = { baja: 1, media: 2, alta: 3, urgente: 4, mostrador: 5 }
         return pWeights[row.count_priority || 'media'] || 2
       }
       if (key === 'item') return row.item_code || ''
@@ -598,6 +599,7 @@ onBeforeUnmount(() => {
               <option value="media">Media</option>
               <option value="alta">Alta</option>
               <option value="urgente">Urgente</option>
+              <option value="mostrador">Mostrador</option>
             </select>
           </div>
           <div>
@@ -1286,6 +1288,7 @@ onBeforeUnmount(() => {
 .priority-badge.media { background: #e0e7ff; color: #4338ca; }
 .priority-badge.alta { background: #fef08a; color: #a16207; }
 .priority-badge.urgente { background: #fee2e2; color: #b91c1c; }
+.priority-badge.mostrador { background: #f3e8ff; color: #7c3aed; }
 
 .panel-top {
   margin-bottom: 0.9rem;

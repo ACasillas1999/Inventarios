@@ -585,6 +585,181 @@ export class ReportsService {
 
         return results
     }
+
+    /**
+     * Obtiene el reporte de tiempos de respuesta por prioridad
+     */
+    async getPriorityTimesReport(filters: { branch_id?: number, classification?: string, responsible_user_id?: number, date_from?: string, date_to?: string }) {
+        // 1. Obtener conteos asignados e iniciados para calcular el tiempo de inicio
+        let countsQuery = `
+            SELECT 
+                c.id, 
+                c.folio, 
+                c.priority, 
+                c.classification,
+                c.created_at, 
+                c.assigned_at, 
+                c.started_at, 
+                c.finished_at,
+                c.closed_at,
+                b.name as branch_name,
+                u.name as responsible_name
+            FROM counts c
+            JOIN branches b ON c.branch_id = b.id
+            LEFT JOIN users u ON c.responsible_user_id = u.id
+            WHERE c.assigned_at IS NOT NULL AND c.started_at IS NOT NULL
+        `
+        const countsParams: any[] = []
+
+        if (filters.branch_id) {
+            countsQuery += ' AND c.branch_id = ?'
+            countsParams.push(filters.branch_id)
+        }
+        if (filters.classification) {
+            countsQuery += ' AND c.classification = ?'
+            countsParams.push(filters.classification)
+        }
+        if (filters.responsible_user_id) {
+            countsQuery += ' AND c.responsible_user_id = ?'
+            countsParams.push(filters.responsible_user_id)
+        }
+        if (filters.date_from) {
+            countsQuery += ' AND c.created_at >= ?'
+            countsParams.push(filters.date_from)
+        }
+        if (filters.date_to) {
+            countsQuery += ' AND c.created_at <= ?'
+            countsParams.push(filters.date_to)
+        }
+
+        countsQuery += ' ORDER BY c.created_at DESC'
+        const [countsRows] = await this.pool.execute<RowDataPacket[]>(countsQuery, countsParams)
+
+        // 2. Obtener solicitudes resueltas para calcular el tiempo de resolución
+        let requestsQuery = `
+            SELECT 
+                r.id,
+                r.folio as request_folio,
+                c.folio as count_folio,
+                c.priority,
+                c.classification,
+                r.created_at as request_created_at,
+                r.reviewed_at,
+                b.name as branch_name,
+                u.name as reviewer_name
+            FROM requests r
+            JOIN counts c ON r.count_id = c.id
+            JOIN branches b ON c.branch_id = b.id
+            LEFT JOIN users u ON r.reviewed_by_user_id = u.id
+            WHERE r.reviewed_at IS NOT NULL
+        `
+        const requestsParams: any[] = []
+
+        if (filters.branch_id) {
+            requestsQuery += ' AND c.branch_id = ?'
+            requestsParams.push(filters.branch_id)
+        }
+        if (filters.classification) {
+            requestsQuery += ' AND c.classification = ?'
+            requestsParams.push(filters.classification)
+        }
+        if (filters.responsible_user_id) {
+            requestsQuery += ' AND c.responsible_user_id = ?'
+            requestsParams.push(filters.responsible_user_id)
+        }
+        if (filters.date_from) {
+            requestsQuery += ' AND c.created_at >= ?'
+            requestsParams.push(filters.date_from)
+        }
+        if (filters.date_to) {
+            requestsQuery += ' AND c.created_at <= ?'
+            requestsParams.push(filters.date_to)
+        }
+
+        requestsQuery += ' ORDER BY r.created_at DESC'
+        const [requestsRows] = await this.pool.execute<RowDataPacket[]>(requestsQuery, requestsParams)
+
+        // 3. Procesar datos de conteos
+        const priorityStats = {
+            baja: { start_total_min: 0, start_count: 0, res_total_min: 0, res_count: 0 },
+            media: { start_total_min: 0, start_count: 0, res_total_min: 0, res_count: 0 },
+            alta: { start_total_min: 0, start_count: 0, res_total_min: 0, res_count: 0 },
+            urgente: { start_total_min: 0, start_count: 0, res_total_min: 0, res_count: 0 },
+            mostrador: { start_total_min: 0, start_count: 0, res_total_min: 0, res_count: 0 }
+        }
+
+        const countsDetail = countsRows.map((row: any) => {
+            const assigned = new Date(row.assigned_at)
+            const started = new Date(row.started_at)
+            const elapsed = TimeUtils.getNetWorkingMinutes(assigned, started)
+            
+            const prio = (row.priority || 'media').toLowerCase() as keyof typeof priorityStats
+            if (priorityStats[prio]) {
+                priorityStats[prio].start_total_min += elapsed
+                priorityStats[prio].start_count += 1
+            }
+
+            return {
+                id: row.id,
+                folio: row.folio,
+                priority: row.priority || 'media',
+                classification: row.classification,
+                branch_name: row.branch_name,
+                responsible_name: row.responsible_name || 'Sin asignar',
+                assigned_at: row.assigned_at,
+                started_at: row.started_at,
+                elapsed_minutes: elapsed,
+                elapsed_formatted: TimeUtils.formatDuration(elapsed)
+            }
+        })
+
+        // 4. Procesar datos de solicitudes
+        const requestsDetail = requestsRows.map((row: any) => {
+            const created = new Date(row.request_created_at)
+            const reviewed = new Date(row.reviewed_at)
+            const elapsed = TimeUtils.getNetWorkingMinutes(created, reviewed)
+
+            const prio = (row.priority || 'media').toLowerCase() as keyof typeof priorityStats
+            if (priorityStats[prio]) {
+                priorityStats[prio].res_total_min += elapsed
+                priorityStats[prio].res_count += 1
+            }
+
+            return {
+                id: row.id,
+                request_folio: row.request_folio,
+                count_folio: row.count_folio,
+                priority: row.priority || 'media',
+                classification: row.classification,
+                branch_name: row.branch_name,
+                reviewer_name: row.reviewer_name || 'Sistema',
+                created_at: row.request_created_at,
+                reviewed_at: row.reviewed_at,
+                elapsed_minutes: elapsed,
+                elapsed_formatted: TimeUtils.formatDuration(elapsed)
+            }
+        })
+
+        // 5. Compilar resumen agrupado por prioridad
+        const summary = Object.keys(priorityStats).map((prio) => {
+            const stats = priorityStats[prio as keyof typeof priorityStats]
+            return {
+                priority: prio,
+                avg_start_minutes: stats.start_count > 0 ? Math.floor(stats.start_total_min / stats.start_count) : 0,
+                avg_start_formatted: TimeUtils.formatDuration(stats.start_count > 0 ? Math.floor(stats.start_total_min / stats.start_count) : 0),
+                count_start: stats.start_count,
+                avg_resolution_minutes: stats.res_count > 0 ? Math.floor(stats.res_total_min / stats.res_count) : 0,
+                avg_resolution_formatted: TimeUtils.formatDuration(stats.res_count > 0 ? Math.floor(stats.res_total_min / stats.res_count) : 0),
+                count_resolution: stats.res_count
+            }
+        })
+
+        return {
+            summary,
+            counts: countsDetail,
+            requests: requestsDetail
+        }
+    }
 }
 
 export const reportsService = new ReportsService()

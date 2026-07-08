@@ -176,7 +176,23 @@ class CountsService {
         if (count.status !== 'cerrado' && count.status !== 'contado') {
             throw new Error('Count must be closed');
         }
-        const [diffRows] = await this.pool.execute(`
+        // Para migracion: se crean solicitudes aunque la diferencia sea 0
+        // Para conteos normales: solo se crean si hay diferencia
+        const isMigracion = count.classification === 'migracion';
+        const diffQuery = isMigracion
+            ? `
+      SELECT
+        cd.id as count_detail_id,
+        cd.item_code,
+        cd.system_stock,
+        cd.counted_stock,
+        (cd.counted_stock - cd.system_stock) as difference
+      FROM count_details cd
+      WHERE cd.count_id = ?
+        AND cd.counted_stock IS NOT NULL
+      ORDER BY cd.item_code ASC
+      `
+            : `
       SELECT
         cd.id as count_detail_id,
         cd.item_code,
@@ -188,7 +204,8 @@ class CountsService {
         AND cd.counted_stock IS NOT NULL
         AND cd.counted_stock != cd.system_stock
       ORDER BY cd.item_code ASC
-      `, [countId]);
+      `;
+        const [diffRows] = await this.pool.execute(diffQuery, [countId]);
         const differences = diffRows;
         if (differences.length === 0) {
             return { created: 0, skipped: 0, total_differences: 0 };
@@ -240,7 +257,7 @@ class CountsService {
             const branchName = branchRows[0]?.name || `Sucursal ${count.branch_id}`;
             const userName = userRows[0]?.name || 'Usuario';
             for (const req of toCreate) {
-                await NotificationService_1.notificationService.notifyRequestCreated(count.folio, branchName, count.branch_id, req.item_code, req.difference, userName, 'count');
+                await NotificationService_1.notificationService.notifyRequestCreated(count.folio, branchName, count.branch_id, req.item_code, req.difference, userName, count.classification === 'migracion' ? 'migracion' : (count.classification === 'ajuste' ? 'direct' : 'count'));
                 // Find the folio for this request from the folios array generated earlier
                 const reqIdx = toCreate.indexOf(req);
                 const reqFolio = folios[reqIdx];
@@ -324,7 +341,7 @@ class CountsService {
     async createCount(userId, data) {
         let itemsToCount = [];
         let itemsDataMap = new Map();
-        if (data.classification === 'ajuste' && data.items_data?.length) {
+        if ((data.classification === 'ajuste' || data.classification === 'migracion') && data.items_data?.length) {
             // Direct adjustment flow
             itemsToCount = data.items_data.map(i => i.item_code);
             data.items_data.forEach(i => itemsDataMap.set(i.item_code, i.count));
@@ -391,7 +408,7 @@ class CountsService {
         const createdCounts = [];
         const conn = await this.pool.getConnection();
         // Determine status: if direct adjustment, set to 'cerrado'
-        const isDirectAdjustment = data.classification === 'ajuste' && itemsDataMap.size > 0;
+        const isDirectAdjustment = (data.classification === 'ajuste' || data.classification === 'migracion') && itemsDataMap.size > 0;
         const initialStatus = isDirectAdjustment ? 'cerrado' : 'pendiente';
         const now = new Date();
         try {
@@ -427,7 +444,7 @@ class CountsService {
                 const [result] = await conn.execute(query, params);
                 const insertId = result.insertId;
                 createdCountIds.push(insertId);
-                if (data.classification === 'ajuste' && itemsDataMap.has(item)) {
+                if ((data.classification === 'ajuste' || data.classification === 'migracion') && itemsDataMap.has(item)) {
                     // Direct adjustment: Create detail with counted stock
                     const countedStock = itemsDataMap.get(item);
                     await this.seedCountDetailsWithValues(conn, insertId, data.branch_id, item, selectedWarehouse, countedStock);
@@ -728,11 +745,23 @@ class CountsService {
       WHERE 1=1
     `;
         let countQuery = 'SELECT COUNT(*) as total FROM counts c WHERE 1=1';
-        const params = [];
+        const filterParams = []; // params shared by both queries (filters only)
         if (filters.branch_id) {
             query += ' AND c.branch_id = ?';
             countQuery += ' AND c.branch_id = ?';
-            params.push(filters.branch_id);
+            filterParams.push(filters.branch_id);
+        }
+        if (filters.branch_ids !== undefined) {
+            if (filters.branch_ids.length > 0) {
+                const placeholders = filters.branch_ids.map(() => '?').join(', ');
+                query += ` AND c.branch_id IN (${placeholders})`;
+                countQuery += ` AND c.branch_id IN (${placeholders})`;
+                filterParams.push(...filters.branch_ids);
+            }
+            else {
+                query += ` AND 1 = 0`;
+                countQuery += ` AND 1 = 0`;
+            }
         }
         const statusFilters = Array.isArray(filters.statuses) && filters.statuses.length
             ? filters.statuses
@@ -743,42 +772,47 @@ class CountsService {
             const placeholders = statusFilters.map(() => '?').join(', ');
             query += ` AND c.status IN (${placeholders})`;
             countQuery += ` AND c.status IN (${placeholders})`;
-            params.push(...statusFilters);
+            filterParams.push(...statusFilters);
         }
         if (filters.type) {
             query += ' AND c.type = ?';
             countQuery += ' AND c.type = ?';
-            params.push(filters.type);
+            filterParams.push(filters.type);
         }
         if (filters.classification) {
             query += ' AND c.classification = ?';
             countQuery += ' AND c.classification = ?';
-            params.push(filters.classification);
+            filterParams.push(filters.classification);
+        }
+        if (filters.priority) {
+            query += ' AND c.priority = ?';
+            countQuery += ' AND c.priority = ?';
+            filterParams.push(filters.priority);
         }
         if (filters.responsible_user_id) {
             query += ' AND c.responsible_user_id = ?';
             countQuery += ' AND c.responsible_user_id = ?';
-            params.push(filters.responsible_user_id);
+            filterParams.push(filters.responsible_user_id);
         }
         if (filters.date_from) {
             query += ' AND c.created_at >= ?';
             countQuery += ' AND c.created_at >= ?';
-            params.push(filters.date_from);
+            filterParams.push(filters.date_from);
         }
         if (filters.date_to) {
             query += ' AND c.created_at <= ?';
             countQuery += ' AND c.created_at <= ?';
-            params.push(filters.date_to);
+            filterParams.push(filters.date_to);
         }
         if (filters.scheduled_from) {
             query += ' AND c.scheduled_date >= ?';
             countQuery += ' AND c.scheduled_date >= ?';
-            params.push(filters.scheduled_from);
+            filterParams.push(filters.scheduled_from);
         }
         if (filters.scheduled_to) {
             query += ' AND c.scheduled_date <= ?';
             countQuery += ' AND c.scheduled_date <= ?';
-            params.push(filters.scheduled_to);
+            filterParams.push(filters.scheduled_to);
         }
         if (filters.search) {
             const search = `%${filters.search}%`;
@@ -794,20 +828,22 @@ class CountsService {
       )`;
             query += searchSql;
             countQuery += searchSql;
-            params.push(search, search, search, search, search);
+            filterParams.push(search, search, search, search, search);
         }
         query += ' GROUP BY c.id';
         query += ' ORDER BY c.folio DESC';
+        // Build queryParams: filterParams + LIMIT/OFFSET (only for main query)
+        const queryParams = [...filterParams];
         if (filters.limit) {
             query += ' LIMIT ?';
-            params.push(filters.limit);
+            queryParams.push(filters.limit);
             if (filters.offset) {
                 query += ' OFFSET ?';
-                params.push(filters.offset);
+                queryParams.push(filters.offset);
             }
         }
-        const [counts] = await this.pool.execute(query, params);
-        const [countResult] = await this.pool.execute(countQuery, params);
+        const [counts] = await this.pool.execute(query, queryParams);
+        const [countResult] = await this.pool.execute(countQuery, filterParams);
         // Get active special lines for detection
         const [specialLinesRows] = await this.pool.execute('SELECT line_code FROM special_lines WHERE is_active = 1');
         const activeSpecialLineCodes = new Set(specialLinesRows.map((row) => String(row.line_code)));
@@ -1008,16 +1044,6 @@ class CountsService {
             }
             catch (err) {
                 logger_1.logger.error(`Error notifying count finish for ${id}:`, err);
-            }
-        }
-        // Generate adjustment requests automatically when a count is closed.
-        // Safe to retry because createRequestsFromCount skips existing request rows.
-        if (data.status === 'cerrado' && existing.status !== data.status) {
-            try {
-                await this.createRequestsFromCount(id, userId);
-            }
-            catch (err) {
-                logger_1.logger.error(`Error auto-creating requests for closed count ${id}:`, err);
             }
         }
         logger_1.logger.info(`Count ${id} updated`);
@@ -1362,8 +1388,8 @@ class CountsService {
     /**
      * Lista diferencias registradas en detalles de conteo
      */
-    async listDifferences() {
-        const [rows] = await this.pool.execute(`
+    async listDifferences(filters) {
+        let query = `
       SELECT
         cd.*,
         c.folio,
@@ -1372,8 +1398,30 @@ class CountsService {
       INNER JOIN counts c ON c.id = cd.count_id
       WHERE cd.counted_stock IS NOT NULL
         AND cd.counted_stock != cd.system_stock
-      ORDER BY cd.updated_at DESC
-      `);
+    `;
+        const params = [];
+        if (filters?.branch_id) {
+            query += ' AND c.branch_id = ?';
+            params.push(filters.branch_id);
+        }
+        if (filters?.classification) {
+            query += ' AND c.classification = ?';
+            params.push(filters.classification);
+        }
+        if (filters?.responsible_user_id) {
+            query += ' AND c.responsible_user_id = ?';
+            params.push(filters.responsible_user_id);
+        }
+        if (filters?.date_from) {
+            query += ' AND c.created_at >= ?';
+            params.push(filters.date_from);
+        }
+        if (filters?.date_to) {
+            query += ' AND c.created_at <= ?';
+            params.push(filters.date_to);
+        }
+        query += ' ORDER BY cd.updated_at DESC';
+        const [rows] = await this.pool.execute(query, params);
         return rows;
     }
 }

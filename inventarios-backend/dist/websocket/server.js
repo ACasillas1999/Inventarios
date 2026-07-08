@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.emitCountReassigned = exports.emitToRole = exports.emitToUser = exports.emitToRoom = exports.emitCountDetailAdded = exports.emitCountStatusChanged = exports.emitCountCreated = exports.emitRequestCreated = exports.emitRequestStatus = exports.emitCountProgress = exports.emitStockUpdate = exports.getWebSocketServer = exports.initializeWebSocket = void 0;
+exports.emitRequestComment = exports.emitCountReassigned = exports.emitToRole = exports.emitToUser = exports.emitToRoom = exports.emitCountDetailAdded = exports.emitCountStatusChanged = exports.emitCountCreated = exports.emitRequestCreated = exports.emitRequestStatus = exports.emitCountProgress = exports.emitStockUpdate = exports.getWebSocketServer = exports.initializeWebSocket = void 0;
 const socket_io_1 = require("socket.io");
 const auth_1 = require("../middlewares/auth");
 const logger_1 = require("../utils/logger");
@@ -11,7 +11,7 @@ let io = null;
 const initializeWebSocket = (httpServer) => {
     io = new socket_io_1.Server(httpServer, {
         cors: {
-            origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+            origin: true,
             methods: ['GET', 'POST'],
             credentials: true
         },
@@ -57,6 +57,14 @@ const initializeWebSocket = (httpServer) => {
         socket.on('leave_branch', (branchId) => {
             socket.leave(`branch:${branchId}`);
             logger_1.logger.debug(`User ${user.id} left branch ${branchId}`);
+        });
+        socket.on('join_request', (requestId) => {
+            socket.join(`request:${requestId}`);
+            logger_1.logger.debug(`User ${user.id} joined request ${requestId}`);
+        });
+        socket.on('leave_request', (requestId) => {
+            socket.leave(`request:${requestId}`);
+            logger_1.logger.debug(`User ${user.id} left request ${requestId}`);
         });
         // Desconexión
         socket.on('disconnect', () => {
@@ -254,6 +262,20 @@ const emitCountReassigned = (countId, folio, oldResponsibleId, newResponsibleId)
     logger_1.logger.debug(`Count reassigned emitted for ${folio}: ${oldResponsibleId} -> ${newResponsibleId}`);
 };
 exports.emitCountReassigned = emitCountReassigned;
+/**
+ * Emite un nuevo comentario de solicitud a todos los usuarios en la sala de esa solicitud
+ */
+const emitRequestComment = (requestId, comment) => {
+    if (!io)
+        return;
+    io.to(`request:${requestId}`).emit('request_comment', {
+        type: 'request_comment',
+        data: comment,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Request comment emitted for request ${requestId}`);
+};
+exports.emitRequestComment = emitRequestComment;
 exports.default = {
     initializeWebSocket: exports.initializeWebSocket,
     getWebSocketServer: exports.getWebSocketServer,
@@ -265,6 +287,7 @@ exports.default = {
     emitCountStatusChanged: exports.emitCountStatusChanged,
     emitCountDetailAdded: exports.emitCountDetailAdded,
     emitCountReassigned: exports.emitCountReassigned,
+    emitRequestComment: exports.emitRequestComment,
     emitToRoom: exports.emitToRoom,
     emitToUser: exports.emitToUser,
     emitToRole: exports.emitToRole

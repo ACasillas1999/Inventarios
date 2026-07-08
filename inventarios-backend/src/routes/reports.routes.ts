@@ -12,5 +12,6 @@ router.get('/coverage', reportsController.getCoverageReport)
 router.get('/line-stats', reportsController.getLineStats)
 router.get('/productivity', reportsController.getProductivityStats)
 router.get('/adjustments', reportsController.getAdjustmentsReport)
+router.get('/priority-times', reportsController.getPriorityTimesReport)
 
 export default router

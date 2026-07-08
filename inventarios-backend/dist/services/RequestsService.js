@@ -16,6 +16,7 @@ const requestSelectQuery = `
     r.*,
     c.folio as count_folio,
     c.classification as count_classification,
+    c.priority as count_priority,
     cd.warehouse_id,
     cd.warehouse_name,
     u_requested.name as requested_by_name,
@@ -38,7 +39,7 @@ class RequestsService {
     }
     async listRequests(filters) {
         let query = `${requestSelectQuery} WHERE 1=1`;
-        let countQuery = 'SELECT COUNT(*) as total FROM requests r WHERE 1=1';
+        let countQuery = 'SELECT COUNT(*) as total FROM requests r LEFT JOIN counts c ON r.count_id = c.id WHERE 1=1';
         const params = [];
         const statusFilters = Array.isArray(filters.statuses) && filters.statuses.length
             ? filters.statuses
@@ -56,10 +57,32 @@ class RequestsService {
             countQuery += ' AND r.branch_id = ?';
             params.push(filters.branch_id);
         }
+        if (filters.branch_ids !== undefined) {
+            if (filters.branch_ids.length > 0) {
+                const placeholders = filters.branch_ids.map(() => '?').join(', ');
+                query += ` AND r.branch_id IN (${placeholders})`;
+                countQuery += ` AND r.branch_id IN (${placeholders})`;
+                params.push(...filters.branch_ids);
+            }
+            else {
+                query += ` AND 1 = 0`;
+                countQuery += ` AND 1 = 0`;
+            }
+        }
         if (filters.count_id) {
             query += ' AND r.count_id = ?';
             countQuery += ' AND r.count_id = ?';
             params.push(filters.count_id);
+        }
+        if (filters.surtidor_id) {
+            query += ' AND c.responsible_user_id = ?';
+            countQuery += ' AND c.responsible_user_id = ?';
+            params.push(filters.surtidor_id);
+        }
+        if (filters.priority) {
+            query += ' AND c.priority = ?';
+            countQuery += ' AND c.priority = ?';
+            params.push(filters.priority);
         }
         query += ' ORDER BY r.created_at DESC';
         const limit = typeof filters.limit === 'number' ? filters.limit : 50;

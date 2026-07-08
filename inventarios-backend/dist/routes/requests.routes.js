@@ -6,10 +6,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_1 = require("../middlewares/auth");
 const requestsController_1 = __importDefault(require("../controllers/requestsController"));
+const commentsController_1 = __importDefault(require("../controllers/commentsController"));
 const router = (0, express_1.Router)();
 router.use(auth_1.authMiddleware);
 router.get('/', requestsController_1.default.listRequests);
 router.get('/:id', requestsController_1.default.getRequest);
 router.patch('/:id', (0, auth_1.requirePermission)('requests.update'), requestsController_1.default.updateRequest);
+// Comments (chat en vivo)
+router.get('/:id/comments', commentsController_1.default.listComments);
+router.post('/:id/comments', commentsController_1.default.createComment);
 exports.default = router;
 //# sourceMappingURL=requests.routes.js.map

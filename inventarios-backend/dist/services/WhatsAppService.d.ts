@@ -1,3 +1,7 @@
+/**
+ * Servicio para enviar notificaciones por WhatsApp
+ * Integrado con API de Meta
+ */
 interface CountAlertData {
     folio: string;
     branchName: string;

@@ -13,5 +13,7 @@ router.get('/company-overview', reportsController_1.default.getCompanyOverview);
 router.get('/coverage', reportsController_1.default.getCoverageReport);
 router.get('/line-stats', reportsController_1.default.getLineStats);
 router.get('/productivity', reportsController_1.default.getProductivityStats);
+router.get('/adjustments', reportsController_1.default.getAdjustmentsReport);
+router.get('/priority-times', reportsController_1.default.getPriorityTimesReport);
 exports.default = router;
 //# sourceMappingURL=reports.routes.js.map
