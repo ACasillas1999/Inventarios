@@ -31,7 +31,7 @@ export class BranchesService {
         data.password,
         data.database,
         'active'
-      ]
+      ] as any[]
     )
 
     const newId = result.insertId
