@@ -80,6 +80,16 @@ export const initializeWebSocket = (httpServer: HTTPServer): SocketIOServer => {
       logger.debug(`User ${user.id} left request ${requestId}`)
     })
 
+    socket.on('join_bulk_request', (bulkRequestId: number) => {
+      socket.join(`bulk_request:${bulkRequestId}`)
+      logger.debug(`User ${user.id} joined bulk request ${bulkRequestId}`)
+    })
+
+    socket.on('leave_bulk_request', (bulkRequestId: number) => {
+      socket.leave(`bulk_request:${bulkRequestId}`)
+      logger.debug(`User ${user.id} left bulk request ${bulkRequestId}`)
+    })
+
     // Desconexión
     socket.on('disconnect', () => {
       logger.info(`WebSocket client disconnected: ${user.email} (${socket.id})`)
@@ -168,6 +178,46 @@ export const emitRequestStatus = (
   })
 
   logger.debug(`Request status change emitted for request ${requestId}: ${oldStatus} -> ${newStatus}`)
+}
+
+/**
+ * Emite un evento de cambio de estado de solicitud masiva
+ */
+export const emitBulkRequestStatus = (
+  bulkRequestId: number,
+  folio: string,
+  oldStatus: string,
+  newStatus: string
+): void => {
+  if (!io) return
+
+  io.emit('bulk_request_status', {
+    type: 'bulk_request_status',
+    data: {
+      bulk_request_id: bulkRequestId,
+      folio,
+      old_status: oldStatus,
+      new_status: newStatus
+    },
+    timestamp: new Date()
+  })
+
+  logger.debug(`Bulk request status change emitted for bulk request ${bulkRequestId}: ${oldStatus} -> ${newStatus}`)
+}
+
+/**
+ * Emite un evento cuando se crea una nueva solicitud masiva
+ */
+export const emitBulkRequestCreated = (bulkRequest: any): void => {
+  if (!io) return
+
+  io.emit('bulk_request_created', {
+    type: 'bulk_request_created',
+    data: bulkRequest,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Bulk request created emitted: ${bulkRequest.folio}`)
 }
 
 /**
@@ -324,6 +374,36 @@ export const emitRequestComment = (requestId: number, comment: any): void => {
   logger.debug(`Request comment emitted for request ${requestId}`)
 }
 
+/**
+ * Emite una notificación en vivo a un usuario (sala user:{id}, ya se une todo socket al conectar)
+ */
+export const emitNotification = (userId: number, notification: any): void => {
+  if (!io) return
+
+  io.to(`user:${userId}`).emit('notification', {
+    type: 'notification',
+    data: notification,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Notification emitted to user ${userId}: ${notification.type}`)
+}
+
+/**
+ * Emite un nuevo comentario de solicitud masiva a todos los usuarios en la sala de esa solicitud
+ */
+export const emitBulkRequestComment = (bulkRequestId: number, comment: any): void => {
+  if (!io) return
+
+  io.to(`bulk_request:${bulkRequestId}`).emit('bulk_request_comment', {
+    type: 'bulk_request_comment',
+    data: comment,
+    timestamp: new Date()
+  })
+
+  logger.debug(`Bulk request comment emitted for bulk request ${bulkRequestId}`)
+}
+
 export default {
   initializeWebSocket,
   getWebSocketServer,
@@ -331,6 +411,10 @@ export default {
   emitCountProgress,
   emitRequestStatus,
   emitRequestCreated,
+  emitBulkRequestStatus,
+  emitBulkRequestCreated,
+  emitBulkRequestComment,
+  emitNotification,
   emitCountCreated,
   emitCountStatusChanged,
   emitCountDetailAdded,

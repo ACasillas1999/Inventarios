@@ -68,6 +68,8 @@ export const listRequests = async (req: AuthRequest, res: Response): Promise<voi
       count_id,
       priority: req.query.priority as string | undefined,
       surtidor_id: roleId === 4 ? userId : undefined,
+      date_from: req.query.date_from as string | undefined,
+      date_to: req.query.date_to as string | undefined,
       limit,
       offset
     })

@@ -133,4 +133,25 @@ export const getPriorityTimesReport = async (req: AuthRequest, res: Response): P
     }
 }
 
-export default { getAuditKPIs, getCompanyOverview, getCoverageReport, getLineStats, getProductivityStats, getAdjustmentsReport, getPriorityTimesReport }
+export const getBulkRequestsReport = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const branchId = req.query.branch_id ? parseInt(req.query.branch_id as string) : undefined
+        const status = req.query.status as string
+        const dateFrom = req.query.date_from as string
+        const dateTo = req.query.date_to as string
+
+        const report = await reportsService.getBulkRequestsReport({
+            branch_id: branchId,
+            status,
+            date_from: dateFrom,
+            date_to: dateTo
+        })
+
+        res.json(report)
+    } catch (error) {
+        logger.error('Get Bulk Requests Report error:', error)
+        res.status(500).json({ error: 'Failed to generate bulk requests report' })
+    }
+}
+
+export default { getAuditKPIs, getCompanyOverview, getCoverageReport, getLineStats, getProductivityStats, getAdjustmentsReport, getPriorityTimesReport, getBulkRequestsReport }

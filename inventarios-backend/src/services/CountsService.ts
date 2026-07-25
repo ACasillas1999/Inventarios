@@ -1718,7 +1718,11 @@ export class CountsService {
    * Obtiene estadísticas del dashboard
    * Devuelve contadores globales, resumen por sucursal y conteos recientes
    */
-  async getDashboardStats(): Promise<any> {
+  async getDashboardStats(year?: number, month?: number): Promise<any> {
+    const now = new Date()
+    const filterYear = typeof year === 'number' && !isNaN(year) ? year : now.getFullYear()
+    const filterMonth = typeof month === 'number' && !isNaN(month) ? month : (now.getMonth() + 1)
+
     // 1. Contadores globales
     const [globalRows] = await this.pool.execute<RowDataPacket[]>(`
       SELECT
@@ -1730,7 +1734,8 @@ export class CountsService {
         SUM(CASE WHEN status = 'cancelado' THEN 1 ELSE 0 END) as cancelled_counts,
         SUM(CASE WHEN status = 'pendiente' AND DATE(scheduled_date) = CURDATE() THEN 1 ELSE 0 END) as scheduled_today
       FROM counts
-    `)
+      WHERE YEAR(created_at) = ? AND MONTH(created_at) = ?
+    `, [filterYear, filterMonth])
     const global = globalRows[0] || {}
 
     // 2. Resumen por sucursal
@@ -1746,12 +1751,12 @@ export class CountsService {
         SUM(CASE WHEN c.status = 'cancelado' THEN 1 ELSE 0 END) as cancelled,
         MAX(c.created_at) as last_count_date
       FROM branches b
-      LEFT JOIN counts c ON c.branch_id = b.id
+      LEFT JOIN counts c ON c.branch_id = b.id AND YEAR(c.created_at) = ? AND MONTH(c.created_at) = ?
       GROUP BY b.id, b.name
       ORDER BY total DESC
-    `)
+    `, [filterYear, filterMonth])
 
-    // 3. Conteos recientes (últimos 15)
+    // 3. Conteos recientes (últimos 15 del mes seleccionado)
     const [recentRows] = await this.pool.execute<RowDataPacket[]>(`
       SELECT
         c.id,
@@ -1768,9 +1773,10 @@ export class CountsService {
       FROM counts c
       LEFT JOIN branches b ON b.id = c.branch_id
       LEFT JOIN users u ON u.id = c.responsible_user_id
+      WHERE YEAR(c.created_at) = ? AND MONTH(c.created_at) = ?
       ORDER BY c.created_at DESC
       LIMIT 15
-    `)
+    `, [filterYear, filterMonth])
 
     return {
       total_counts: Number(global.total_counts ?? 0),

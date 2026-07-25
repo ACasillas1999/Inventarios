@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { countsService } from '@/services/api'
 import { useRouter } from 'vue-router'
 import MobileMenuToggle from '@/components/MobileMenuToggle.vue'
@@ -98,11 +98,42 @@ const formatDate = (d: string | null) => {
   return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+const selectedMonth = ref(new Date().getMonth() + 1)
+const selectedYear = ref(new Date().getFullYear())
+
+const monthsList = [
+  { value: 1, name: 'Enero' },
+  { value: 2, name: 'Febrero' },
+  { value: 3, name: 'Marzo' },
+  { value: 4, name: 'Abril' },
+  { value: 5, name: 'Mayo' },
+  { value: 6, name: 'Junio' },
+  { value: 7, name: 'Julio' },
+  { value: 8, name: 'Agosto' },
+  { value: 9, name: 'Septiembre' },
+  { value: 10, name: 'Octubre' },
+  { value: 11, name: 'Noviembre' },
+  { value: 12, name: 'Diciembre' }
+]
+
+const currentYear = new Date().getFullYear()
+const yearsList = computed(() => {
+  const years = []
+  for (let y = currentYear - 3; y <= currentYear + 1; y++) {
+    years.push(y)
+  }
+  return years
+})
+
+watch([selectedMonth, selectedYear], () => {
+  loadStats()
+})
+
 const loadStats = async () => {
   try {
     loading.value = true
     error.value = ''
-    const raw = await countsService.getDashboardStats()
+    const raw = await countsService.getDashboardStats(selectedYear.value, selectedMonth.value)
     stats.value = normalize(raw)
   } catch (err: any) {
     console.error('Error loading dashboard stats:', err)
@@ -137,7 +168,14 @@ onMounted(loadStats)
           </div>
         </div>
         <div class="header-actions">
-          <span class="tag accent">{{ new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) }}</span>
+          <div class="date-selectors">
+            <select v-model="selectedMonth" class="select-compact">
+              <option v-for="m in monthsList" :key="m.value" :value="m.value">{{ m.name }}</option>
+            </select>
+            <select v-model="selectedYear" class="select-compact">
+              <option v-for="y in yearsList" :key="y" :value="y">{{ y }}</option>
+            </select>
+          </div>
           <button class="btn-icon" @click="loadStats" title="Actualizar">🔄</button>
         </div>
       </div>
@@ -382,4 +420,30 @@ onMounted(loadStats)
 
 .small { font-size: 0.8rem; }
 .muted { color: var(--muted, #6b7280); }
+
+/* Date selectors styling */
+.date-selectors {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.select-compact {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--line, #e2e8f0);
+  background-color: #fff;
+  color: var(--ink, #1e293b);
+  cursor: pointer;
+  height: 32px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.select-compact:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 </style>

@@ -385,9 +385,12 @@ export const updateCountDetail = async (req: AuthRequest, res: Response): Promis
  * Obtiene estadísticas del dashboard
  * GET /api/counts/stats/dashboard
  */
-export const getDashboardStats = async (_req: AuthRequest, res: Response): Promise<void> => {
+export const getDashboardStats = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const stats = await countsService.getDashboardStats()
+    const year = req.query.year ? parseInt(req.query.year as string) : undefined
+    const month = req.query.month ? parseInt(req.query.month as string) : undefined
+
+    const stats = await countsService.getDashboardStats(year, month)
 
     res.json(stats)
   } catch (error) {

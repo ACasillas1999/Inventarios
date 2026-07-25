@@ -393,8 +393,11 @@ export interface Count {
 }
 
 export const countsService = {
-  getDashboardStats: async () => {
-    const response = await api.get('/counts/stats/dashboard', {
+  getDashboardStats: async (year?: number, month?: number) => {
+    const params = new URLSearchParams()
+    if (year !== undefined) params.append('year', year.toString())
+    if (month !== undefined) params.append('month', month.toString())
+    const response = await api.get(`/counts/stats/dashboard?${params.toString()}`, {
       timeout: DASHBOARD_TIMEOUT_MS
     })
     return response.data
@@ -586,6 +589,8 @@ export const requestsService = {
     branch_id?: number
     count_id?: number
     priority?: string
+    date_from?: string
+    date_to?: string
     limit?: number
     offset?: number
   }): Promise<{ requests: AdjustmentRequest[]; total: number }> => {
@@ -619,6 +624,220 @@ export const requestsService = {
     }
   ): Promise<AdjustmentRequest> => {
     const response = await api.patch<AdjustmentRequest>(`/requests/${id}`, data)
+    return response.data
+  }
+}
+
+// ============================================
+// BULK REQUESTS (DIFERENCIAS MASIVAS) ENDPOINTS
+// ============================================
+
+export type BulkRequestStatus = 'pendiente' | 'en_revision' | 'ajustado' | 'rechazado'
+
+export interface BulkRequestFile {
+  id: number
+  bulk_request_id: number
+  original_name: string
+  stored_name: string
+  mime_type: string | null
+  size_bytes: number | null
+  created_at: string
+}
+
+export interface BulkRequest {
+  id: number
+  folio: string
+  branch_id: number
+  branch_name?: string
+  warehouse_id: number
+  warehouse_name: string | null
+  classification: 'ajuste'
+  priority: string
+  responsible_user_id: number
+  responsible_name?: string
+  requested_by_user_id: number
+  requested_by_name?: string | null
+  notes: string
+  status: BulkRequestStatus
+  movement_number: string | null
+  resolution_notes: string | null
+  reviewed_by_user_id: number | null
+  reviewed_by_name?: string | null
+  reviewed_at: string | null
+  created_at: string
+  updated_at: string
+  files?: BulkRequestFile[]
+}
+
+export const bulkRequestsService = {
+  list: async (filters?: {
+    status?: BulkRequestStatus | BulkRequestStatus[]
+    branch_id?: number
+    priority?: string
+    date_from?: string
+    date_to?: string
+    limit?: number
+    offset?: number
+  }): Promise<{ requests: BulkRequest[]; total: number }> => {
+    const params = new URLSearchParams()
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value === undefined || value === null) return
+        if (Array.isArray(value)) {
+          if (!value.length) return
+          params.append(key, value.join(','))
+          return
+        }
+        if (typeof value === 'string' && value.trim() === '') return
+        params.append(key, String(value))
+      })
+    }
+    const response = await api.get(`/bulk-requests?${params.toString()}`)
+    return response.data
+  },
+
+  getById: async (id: number): Promise<BulkRequest> => {
+    const response = await api.get<BulkRequest>(`/bulk-requests/${id}`)
+    return response.data
+  },
+
+  create: async (data: {
+    branch_id: number
+    warehouse_id: number
+    warehouse_name?: string
+    priority: string
+    responsible_user_id: number
+    notes: string
+    files: File[]
+  }): Promise<BulkRequest> => {
+    const formData = new FormData()
+    formData.append('branch_id', String(data.branch_id))
+    formData.append('warehouse_id', String(data.warehouse_id))
+    if (data.warehouse_name) formData.append('warehouse_name', data.warehouse_name)
+    formData.append('priority', data.priority)
+    formData.append('responsible_user_id', String(data.responsible_user_id))
+    formData.append('notes', data.notes)
+    data.files.forEach((file) => formData.append('files', file))
+
+    // La instancia de axios fija 'Content-Type: application/json' por defecto.
+    // Si no se anula aquí, axios serializa el FormData como JSON en vez de
+    // mandarlo como multipart (por eso el backend veía 0 archivos). Al poner
+    // el header en `undefined` axios lo quita y deja que el navegador agregue
+    // 'multipart/form-data' con el boundary correcto automáticamente.
+    const response = await api.post<BulkRequest>('/bulk-requests', formData, {
+      headers: { 'Content-Type': undefined }
+    })
+    return response.data
+  },
+
+  updateStatus: async (
+    id: number,
+    data: {
+      status: BulkRequestStatus
+      movement_number?: string
+      resolution_notes?: string
+    }
+  ): Promise<BulkRequest> => {
+    const response = await api.patch<BulkRequest>(`/bulk-requests/${id}/status`, data)
+    return response.data
+  },
+
+  downloadFile: async (bulkRequestId: number, fileId: number): Promise<Blob> => {
+    const response = await api.get(`/bulk-requests/${bulkRequestId}/files/${fileId}/download`, {
+      responseType: 'blob'
+    })
+    return response.data
+  },
+
+  getFileDownloads: async (bulkRequestId: number, fileId: number): Promise<{ downloads: BulkRequestFileDownload[] }> => {
+    const response = await api.get(`/bulk-requests/${bulkRequestId}/files/${fileId}/downloads`)
+    return response.data
+  }
+}
+
+export interface BulkRequestFileDownload {
+  id: number
+  user_id: number
+  user_name: string | null
+  downloaded_at: string
+}
+
+export interface BulkRequestComment {
+  id: number
+  bulk_request_id: number
+  user_id: number
+  user_name: string | null
+  message: string
+  attachment_original_name?: string | null
+  attachment_mime_type?: string | null
+  attachment_size_bytes?: number | null
+  created_at: string
+}
+
+// ============================================
+// NOTIFICATIONS (CAMPANITA) ENDPOINTS
+// ============================================
+
+export type NotificationType = 'request_comment' | 'request_status' | 'bulk_request_comment' | 'bulk_request_status'
+export type NotificationEntityType = 'request' | 'bulk_request'
+
+export interface AppNotification {
+  id: number
+  user_id: number
+  actor_user_id: number | null
+  actor_name?: string | null
+  type: NotificationType
+  entity_type: NotificationEntityType
+  entity_id: number
+  title: string
+  body: string | null
+  link: string
+  is_read: boolean
+  created_at: string
+}
+
+export const notificationsService = {
+  list: async (): Promise<{ notifications: AppNotification[]; unread_count: number }> => {
+    const response = await api.get('/notifications')
+    return response.data
+  },
+
+  markRead: async (id: number) => {
+    const response = await api.post(`/notifications/${id}/read`)
+    return response.data
+  },
+
+  markAllRead: async () => {
+    const response = await api.post('/notifications/read-all')
+    return response.data
+  },
+
+  markReadForEntity: async (entityType: NotificationEntityType, entityId: number) => {
+    const response = await api.post('/notifications/read-for-entity', { entity_type: entityType, entity_id: entityId })
+    return response.data
+  }
+}
+
+export const bulkRequestCommentsService = {
+  list: async (bulkRequestId: number): Promise<{ comments: BulkRequestComment[] }> => {
+    const response = await api.get(`/bulk-requests/${bulkRequestId}/comments`)
+    return response.data
+  },
+
+  create: async (bulkRequestId: number, data: { message?: string; file?: File }): Promise<BulkRequestComment> => {
+    const formData = new FormData()
+    formData.append('message', data.message || '')
+    if (data.file) formData.append('attachment', data.file)
+    const response = await api.post(`/bulk-requests/${bulkRequestId}/comments`, formData, {
+      headers: { 'Content-Type': undefined }
+    })
+    return response.data
+  },
+
+  downloadAttachment: async (bulkRequestId: number, commentId: number): Promise<Blob> => {
+    const response = await api.get(`/bulk-requests/${bulkRequestId}/comments/${commentId}/attachment`, {
+      responseType: 'blob'
+    })
     return response.data
   }
 }
@@ -773,6 +992,48 @@ export const reportsService = {
 
     const response = await api.get(`/reports/priority-times?${params.toString()}`)
     return response.data
+  },
+  getBulkRequestsReport: async (filters: { branch_id?: number, status?: string, date_from?: string, date_to?: string }): Promise<BulkRequestsReport> => {
+    const params = new URLSearchParams()
+    if (filters.branch_id) params.append('branch_id', filters.branch_id.toString())
+    if (filters.status) params.append('status', filters.status)
+    if (filters.date_from) params.append('date_from', filters.date_from)
+    if (filters.date_to) params.append('date_to', filters.date_to)
+
+    const response = await api.get(`/reports/bulk-requests?${params.toString()}`)
+    return response.data
+  }
+}
+
+export interface BulkRequestsReport {
+  summary: {
+    total: number
+    by_status: Record<'pendiente' | 'en_revision' | 'ajustado' | 'rechazado', number>
+    by_branch: Array<{
+      branch_id: number
+      branch_name: string
+      pendiente: number
+      en_revision: number
+      ajustado: number
+      rechazado: number
+      total: number
+    }>
+    by_priority: Array<{ priority: string; total: number }>
+  }
+  resolution: {
+    overall_avg_hours: number | null
+    by_branch: Array<{ branch_id: number; branch_name: string; avg_hours: number; resolved_count: number }>
+    by_reviewer: Array<{ user_id: number; user_name: string; avg_hours: number; resolved_count: number }>
+  }
+  users: {
+    top_requesters: Array<{ user_id: number; user_name: string; total: number }>
+    top_reviewers: Array<{ user_id: number; user_name: string; total: number }>
+  }
+  files: {
+    total_files: number
+    total_downloads: number
+    never_downloaded_count: number
+    top_files: Array<{ file_id: number; original_name: string; folio: string; download_count: number }>
   }
 }
 
@@ -861,6 +1122,9 @@ export interface RequestComment {
   user_id: number
   user_name: string | null
   message: string
+  attachment_original_name?: string | null
+  attachment_mime_type?: string | null
+  attachment_size_bytes?: number | null
   created_at: string
 }
 
@@ -870,8 +1134,20 @@ export const requestCommentsService = {
     return response.data
   },
 
-  create: async (requestId: number, message: string): Promise<RequestComment> => {
-    const response = await api.post(`/requests/${requestId}/comments`, { message })
+  create: async (requestId: number, data: { message?: string; file?: File }): Promise<RequestComment> => {
+    const formData = new FormData()
+    formData.append('message', data.message || '')
+    if (data.file) formData.append('attachment', data.file)
+    const response = await api.post(`/requests/${requestId}/comments`, formData, {
+      headers: { 'Content-Type': undefined }
+    })
+    return response.data
+  },
+
+  downloadAttachment: async (requestId: number, commentId: number): Promise<Blob> => {
+    const response = await api.get(`/requests/${requestId}/comments/${commentId}/attachment`, {
+      responseType: 'blob'
+    })
     return response.data
   }
 }

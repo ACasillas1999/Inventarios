@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   auditService,
   branchesService,
   requestsService,
   requestCommentsService,
+  notificationsService,
   type AdjustmentRequest,
   type Branch,
   type RequestStatus,
@@ -16,6 +18,8 @@ import MobileMenuToggle from '@/components/MobileMenuToggle.vue'
 
 const authStore = useAuthStore()
 const socketStore = useSocketStore()
+const route = useRoute()
+const router = useRouter()
 
 const socketCleanups: Array<() => void> = []
 
@@ -32,12 +36,16 @@ const filters = reactive<{
   branch_id: number | ''
   count_id: number | ''
   priority: string
+  date_from: string
+  date_to: string
   limit: number
 }>({
   statuses: ['pendiente', 'en_revision'],
   branch_id: '',
   count_id: '',
   priority: '',
+  date_from: '',
+  date_to: '',
   limit: 50,
 })
 
@@ -208,6 +216,8 @@ const loadRequests = async () => {
       branch_id: filters.branch_id || undefined,
       count_id: filters.count_id || undefined,
       priority: filters.priority || undefined,
+      date_from: filters.date_from || undefined,
+      date_to: filters.date_to || undefined,
       limit: filters.limit,
       offset: offset.value,
     })
@@ -311,12 +321,102 @@ const chatMessage = ref('')
 const chatSending = ref(false)
 const chatScrollRef = ref<HTMLDivElement | null>(null)
 
+const chatFile = ref<File | null>(null)
+const chatFilePreviewUrl = ref('')
+const chatFileInputRef = ref<HTMLInputElement | null>(null)
+const attachmentUrls = ref<Map<number, string>>(new Map())
+const attachmentLoading = ref<Set<number>>(new Set())
+
+const isImageMime = (mime?: string | null) => !!mime && mime.startsWith('image/')
+
+const formatFileSize = (bytes?: number | null) => {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 const scrollChatToBottom = () => {
   setTimeout(() => {
     if (chatScrollRef.value) {
       chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
     }
   }, 50)
+}
+
+const loadAttachmentPreview = async (comment: RequestComment) => {
+  if (!managing.value) return
+  if (!isImageMime(comment.attachment_mime_type)) return
+  if (attachmentUrls.value.has(comment.id) || attachmentLoading.value.has(comment.id)) return
+  attachmentLoading.value.add(comment.id)
+  try {
+    const blob = await requestCommentsService.downloadAttachment(managing.value.id, comment.id)
+    attachmentUrls.value.set(comment.id, URL.createObjectURL(blob))
+  } catch (err) {
+    console.error('Error loading attachment preview', err)
+  } finally {
+    attachmentLoading.value.delete(comment.id)
+  }
+}
+
+const preloadImageAttachments = () => {
+  chatComments.value.forEach((c) => {
+    if (isImageMime(c.attachment_mime_type)) void loadAttachmentPreview(c)
+  })
+}
+
+const showImagePreviewModal = ref(false)
+const previewImageUrl = ref('')
+
+const openImagePreview = (commentId: number) => {
+  const url = attachmentUrls.value.get(commentId)
+  if (url) {
+    previewImageUrl.value = url
+    showImagePreviewModal.value = true
+  }
+}
+
+const downloadCommentAttachment = async (comment: RequestComment) => {
+  if (!managing.value || !comment.attachment_original_name) return
+  try {
+    const blob = await requestCommentsService.downloadAttachment(managing.value.id, comment.id)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = comment.attachment_original_name
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('Error downloading attachment', err)
+    alert('No se pudo descargar el adjunto')
+  }
+}
+
+const clearAttachmentUrls = () => {
+  attachmentUrls.value.forEach((url) => URL.revokeObjectURL(url))
+  attachmentUrls.value = new Map()
+}
+
+const onChatFileSelected = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 10 * 1024 * 1024) {
+    alert('El archivo supera el límite de 10MB')
+    return
+  }
+  if (chatFilePreviewUrl.value) URL.revokeObjectURL(chatFilePreviewUrl.value)
+  chatFile.value = file
+  chatFilePreviewUrl.value = file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+}
+
+const removeChatFile = () => {
+  if (chatFilePreviewUrl.value) URL.revokeObjectURL(chatFilePreviewUrl.value)
+  chatFile.value = null
+  chatFilePreviewUrl.value = ''
 }
 
 const loadComments = async (requestId: number) => {
@@ -326,6 +426,7 @@ const loadComments = async (requestId: number) => {
     const resp = await requestCommentsService.list(requestId)
     chatComments.value = Array.isArray(resp?.comments) ? resp.comments : []
     scrollChatToBottom()
+    preloadImageAttachments()
   } catch (err) {
     console.error('Error loading comments', err)
     chatError.value = 'No se pudo cargar el chat.'
@@ -337,11 +438,12 @@ const loadComments = async (requestId: number) => {
 const sendComment = async () => {
   if (!managing.value) return
   const msg = chatMessage.value.trim()
-  if (!msg || chatSending.value) return
+  if ((!msg && !chatFile.value) || chatSending.value) return
   chatSending.value = true
   try {
-    await requestCommentsService.create(managing.value.id, msg)
+    await requestCommentsService.create(managing.value.id, { message: msg, file: chatFile.value || undefined })
     chatMessage.value = ''
+    removeChatFile()
     // The WebSocket event will add the message, but if no WS just reload
   } catch (err) {
     console.error('Error sending comment', err)
@@ -427,6 +529,10 @@ const openManage = (row: AdjustmentRequest) => {
   chatError.value = ''
   void loadComments(row.id)
   socketStore.joinRequest(row.id)
+
+  notificationsService.markReadForEntity('request', row.id).catch((err) => {
+    console.error('Error marking notifications read', err)
+  })
 }
 
 const closeManage = () => {
@@ -444,6 +550,8 @@ const closeManage = () => {
   chatComments.value = []
   chatMessage.value = ''
   chatError.value = ''
+  removeChatFile()
+  clearAttachmentUrls()
 }
 
 const saveManage = async () => {
@@ -483,11 +591,31 @@ const saveManage = async () => {
   }
 }
 
+const openFromQuery = () => {
+  const openId = Number(route.query.open)
+  if (!Number.isFinite(openId) || openId <= 0) return
+
+  requestsService
+    .getById(openId)
+    .then((request) => openManage(request))
+    .catch((err) => console.error('Error opening request from notification', err))
+    .finally(() => {
+      const { open: _open, ...restQuery } = route.query
+      router.replace({ query: restQuery })
+    })
+}
+
+watch(() => route.query.open, (value) => {
+  if (value) openFromQuery()
+})
+
 onMounted(() => {
   updateIsMobile()
   window.addEventListener('resize', updateIsMobile)
   loadBranches()
   loadRequests()
+
+  openFromQuery()
 
   // Real-time updates
   socketCleanups.push(socketStore.on('request_created', () => {
@@ -508,12 +636,15 @@ onMounted(() => {
       if (!chatComments.value.find(c => c.id === comment.id)) {
         chatComments.value.push(comment)
         scrollChatToBottom()
+        if (isImageMime(comment.attachment_mime_type)) void loadAttachmentPreview(comment)
       }
     }
   }))
 })
 
 onBeforeUnmount(() => {
+  clearAttachmentUrls()
+  removeChatFile()
   if (typeof window === 'undefined') return
   window.removeEventListener('resize', updateIsMobile)
   socketCleanups.forEach(fn => fn())
@@ -601,6 +732,22 @@ onBeforeUnmount(() => {
               <option value="urgente">Urgente</option>
               <option value="mostrador">Mostrador</option>
             </select>
+          </div>
+          <div>
+            <label>Fecha Desde</label>
+            <input
+              v-model="filters.date_from"
+              type="date"
+              @change="applyFilters"
+            />
+          </div>
+          <div>
+            <label>Fecha Hasta</label>
+            <input
+              v-model="filters.date_to"
+              type="date"
+              @change="applyFilters"
+            />
           </div>
           <div>
             <label>Limite</label>
@@ -1063,12 +1210,49 @@ onBeforeUnmount(() => {
                     <span class="chat-bubble-author">{{ c.user_name || 'Usuario' }}</span>
                     <span class="chat-bubble-time">{{ formatDateTime(c.created_at) }}</span>
                   </div>
-                  <p class="chat-bubble-text">{{ c.message }}</p>
+                  <p v-if="c.message" class="chat-bubble-text">{{ c.message }}</p>
+                  <div v-if="c.attachment_original_name" class="chat-attachment">
+                    <img
+                      v-if="isImageMime(c.attachment_mime_type) && attachmentUrls.get(c.id)"
+                      :src="attachmentUrls.get(c.id)"
+                      class="chat-attachment-image"
+                      :alt="c.attachment_original_name"
+                      @click="openImagePreview(c.id)"
+                    />
+                    <p v-else-if="isImageMime(c.attachment_mime_type)" class="chat-attachment-loading">Cargando imagen...</p>
+                    <button
+                      v-else
+                      type="button"
+                      class="chat-attachment-file"
+                      @click="downloadCommentAttachment(c)"
+                    >
+                      <span class="chat-attachment-icon">&#128206;</span>
+                      <span class="chat-attachment-name">{{ c.attachment_original_name }}</span>
+                      <span class="chat-attachment-size">{{ formatFileSize(c.attachment_size_bytes) }}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
+            <div v-if="chatFile" class="chat-file-chip">
+              <img v-if="chatFilePreviewUrl" :src="chatFilePreviewUrl" class="chat-file-chip-thumb" alt="" />
+              <span v-else class="chat-attachment-icon">&#128206;</span>
+              <span class="chat-file-chip-name">{{ chatFile.name }}</span>
+              <button type="button" class="chat-file-chip-remove" @click="removeChatFile">&times;</button>
+            </div>
+
             <form class="chat-input-row" @submit.prevent="sendComment">
+              <label class="chat-attach-btn" title="Adjuntar archivo">
+                &#128206;
+                <input
+                  ref="chatFileInputRef"
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                  style="display: none"
+                  @change="onChatFileSelected"
+                />
+              </label>
               <input
                 id="chat-message-input"
                 v-model="chatMessage"
@@ -1082,7 +1266,7 @@ onBeforeUnmount(() => {
               <button
                 type="submit"
                 class="btn chat-send-btn"
-                :disabled="!chatMessage.trim() || chatSending"
+                :disabled="(!chatMessage.trim() && !chatFile) || chatSending"
               >
                 {{ chatSending ? '...' : 'Enviar' }}
               </button>
@@ -1098,6 +1282,14 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Modal de vista previa de imagen -->
+    <div v-if="showImagePreviewModal" class="image-preview-overlay" @click="showImagePreviewModal = false">
+      <div class="image-preview-container" @click.stop>
+        <button class="btn-close-preview" type="button" aria-label="Cerrar" @click="showImagePreviewModal = false">&times;</button>
+        <img :src="previewImageUrl" class="image-preview-img" alt="Vista previa de adjunto" />
       </div>
     </div>
   </section>
@@ -1246,6 +1438,106 @@ onBeforeUnmount(() => {
   border-color: #1d4ed8;
 }
 
+.chat-attachment {
+  margin-top: 0.35rem;
+}
+
+.chat-attachment-image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  display: block;
+}
+
+.chat-attachment-loading {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+.chat-attachment-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #1e293b;
+  max-width: 220px;
+}
+
+.chat-bubble--own .chat-attachment-file {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+
+.chat-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attachment-size {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.chat-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  margin-bottom: 0.5rem;
+  max-width: 100%;
+}
+
+.chat-file-chip-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.chat-file-chip-name {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.chat-file-chip-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #64748b;
+}
+
+.chat-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
 .chat-input-row {
   display: flex;
   gap: 0.5rem;
@@ -1372,11 +1664,29 @@ onBeforeUnmount(() => {
   margin-bottom: 0.75rem;
 }
 
+.filters .form-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) minmax(110px, 1fr) minmax(80px, 0.8fr) minmax(100px, 1fr) minmax(120px, 1.1fr) minmax(120px, 1.1fr) minmax(70px, 0.7fr);
+  gap: 0.5rem;
+}
+
 .filters .form-grid > div {
-  padding: 0.65rem 0.7rem;
+  padding: 0.4rem 0.5rem;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.filters select,
+.filters input {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  border-radius: 8px;
+  height: 34px;
+  box-sizing: border-box;
 }
 
 .status-filter {
@@ -1385,14 +1695,15 @@ onBeforeUnmount(() => {
 
 .status-filter-title {
   display: block;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
 }
 
 .status-filter-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.4rem 0.55rem;
-  padding: 0.55rem 0.6rem;
+  gap: 0.2rem 0.4rem;
+  padding: 0.4rem 0.5rem;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #fff;
@@ -1577,6 +1888,9 @@ onBeforeUnmount(() => {
 @media (max-width: 1024px) {
   .filters-header {
     display: block;
+  }
+  .filters .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2286,5 +2600,62 @@ onBeforeUnmount(() => {
     background: #fff;
     border-top-color: #d1d5db;
   }
+}
+
+/* Image Preview Modal */
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 1rem;
+}
+
+.image-preview-container {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview-img {
+  max-width: 100%;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+.btn-close-preview {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  background: #fff;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 1.5rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: all 0.15s ease;
+  z-index: 10;
+  line-height: 1;
+}
+
+.btn-close-preview:hover {
+  background: var(--panel-muted);
+  color: var(--ink);
+  transform: scale(1.05);
 }
 </style>

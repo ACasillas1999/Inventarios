@@ -760,6 +760,203 @@ export class ReportsService {
             requests: requestsDetail
         }
     }
+
+    /**
+     * Reporte de Diferencias masivas (bulk_requests): resumen por estatus/sucursal/prioridad,
+     * tiempos de resolución, ranking de usuarios y detalle de archivos adjuntos.
+     */
+    async getBulkRequestsReport(filters: { branch_id?: number, status?: string, date_from?: string, date_to?: string }) {
+        const BULK_STATUSES = ['pendiente', 'en_revision', 'ajustado', 'rechazado'] as const
+
+        const buildWhere = (alias: string, params: any[]): string => {
+            let clause = ' WHERE 1=1'
+            if (filters.branch_id) {
+                clause += ` AND ${alias}.branch_id = ?`
+                params.push(filters.branch_id)
+            }
+            if (filters.status) {
+                clause += ` AND ${alias}.status = ?`
+                params.push(filters.status)
+            }
+            if (filters.date_from) {
+                clause += ` AND ${alias}.created_at >= ?`
+                params.push(filters.date_from)
+            }
+            if (filters.date_to) {
+                clause += ` AND ${alias}.created_at <= ?`
+                params.push(filters.date_to)
+            }
+            return clause
+        }
+
+        // --- Resumen por estatus ---
+        const statusParams: any[] = []
+        const [statusRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT status, COUNT(*) as total FROM bulk_requests${buildWhere('bulk_requests', statusParams)} GROUP BY status`,
+            statusParams
+        )
+        const by_status: Record<string, number> = { pendiente: 0, en_revision: 0, ajustado: 0, rechazado: 0 }
+        let total = 0
+        for (const row of statusRows) {
+            by_status[row.status] = Number(row.total)
+            total += Number(row.total)
+        }
+
+        // --- Resumen por prioridad ---
+        const priorityParams: any[] = []
+        const [priorityRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT priority, COUNT(*) as total FROM bulk_requests${buildWhere('bulk_requests', priorityParams)} GROUP BY priority`,
+            priorityParams
+        )
+        const by_priority = priorityRows.map((row) => ({ priority: row.priority, total: Number(row.total) }))
+
+        // --- Resumen por sucursal (pivot estatus) ---
+        const branchParams: any[] = []
+        const [branchRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT br.branch_id, b.name as branch_name, br.status, COUNT(*) as total
+             FROM bulk_requests br
+             JOIN branches b ON br.branch_id = b.id
+             ${buildWhere('br', branchParams)}
+             GROUP BY br.branch_id, b.name, br.status`,
+            branchParams
+        )
+        const byBranchMap = new Map<number, any>()
+        for (const row of branchRows) {
+            if (!byBranchMap.has(row.branch_id)) {
+                byBranchMap.set(row.branch_id, {
+                    branch_id: row.branch_id,
+                    branch_name: row.branch_name,
+                    pendiente: 0,
+                    en_revision: 0,
+                    ajustado: 0,
+                    rechazado: 0,
+                    total: 0
+                })
+            }
+            const entry = byBranchMap.get(row.branch_id)
+            entry[row.status as typeof BULK_STATUSES[number]] = Number(row.total)
+            entry.total += Number(row.total)
+        }
+        const by_branch = Array.from(byBranchMap.values()).sort((a, b) => b.total - a.total)
+
+        // --- Tiempos de resolución ---
+        const resOverallParams: any[] = []
+        const resOverallWhere = buildWhere('bulk_requests', resOverallParams) +
+            " AND status IN ('ajustado', 'rechazado') AND reviewed_at IS NOT NULL"
+        const [resOverallRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT AVG(TIMESTAMPDIFF(HOUR, created_at, reviewed_at)) as avg_hours, COUNT(*) as resolved_count
+             FROM bulk_requests${resOverallWhere}`,
+            resOverallParams
+        )
+        const overall_avg_hours = resOverallRows[0]?.avg_hours != null ? Number(resOverallRows[0].avg_hours) : null
+
+        const resBranchParams: any[] = []
+        const resBranchWhere = buildWhere('br', resBranchParams) +
+            " AND br.status IN ('ajustado', 'rechazado') AND br.reviewed_at IS NOT NULL"
+        const [resBranchRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT br.branch_id, b.name as branch_name,
+                    AVG(TIMESTAMPDIFF(HOUR, br.created_at, br.reviewed_at)) as avg_hours,
+                    COUNT(*) as resolved_count
+             FROM bulk_requests br
+             JOIN branches b ON br.branch_id = b.id
+             ${resBranchWhere}
+             GROUP BY br.branch_id, b.name`,
+            resBranchParams
+        )
+        const resolution_by_branch = resBranchRows.map((row) => ({
+            branch_id: row.branch_id,
+            branch_name: row.branch_name,
+            avg_hours: Number(row.avg_hours),
+            resolved_count: Number(row.resolved_count)
+        }))
+
+        const resReviewerParams: any[] = []
+        const resReviewerWhere = buildWhere('br', resReviewerParams) +
+            " AND br.status IN ('ajustado', 'rechazado') AND br.reviewed_at IS NOT NULL AND br.reviewed_by_user_id IS NOT NULL"
+        const [resReviewerRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT br.reviewed_by_user_id as user_id, u.name as user_name,
+                    AVG(TIMESTAMPDIFF(HOUR, br.created_at, br.reviewed_at)) as avg_hours,
+                    COUNT(*) as resolved_count
+             FROM bulk_requests br
+             JOIN users u ON br.reviewed_by_user_id = u.id
+             ${resReviewerWhere}
+             GROUP BY br.reviewed_by_user_id, u.name
+             ORDER BY avg_hours ASC`,
+            resReviewerParams
+        )
+        const resolution_by_reviewer = resReviewerRows.map((row) => ({
+            user_id: row.user_id,
+            user_name: row.user_name,
+            avg_hours: Number(row.avg_hours),
+            resolved_count: Number(row.resolved_count)
+        }))
+
+        // --- Ranking de usuarios ---
+        const reqParams: any[] = []
+        const [requesterRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT br.requested_by_user_id as user_id, u.name as user_name, COUNT(*) as total
+             FROM bulk_requests br
+             JOIN users u ON br.requested_by_user_id = u.id
+             ${buildWhere('br', reqParams)}
+             GROUP BY br.requested_by_user_id, u.name
+             ORDER BY total DESC
+             LIMIT 10`,
+            reqParams
+        )
+        const top_requesters = requesterRows.map((row) => ({
+            user_id: row.user_id,
+            user_name: row.user_name,
+            total: Number(row.total)
+        }))
+
+        const revParams: any[] = []
+        const revWhere = buildWhere('br', revParams) + ' AND br.reviewed_by_user_id IS NOT NULL'
+        const [reviewerRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT br.reviewed_by_user_id as user_id, u.name as user_name, COUNT(*) as total
+             FROM bulk_requests br
+             JOIN users u ON br.reviewed_by_user_id = u.id
+             ${revWhere}
+             GROUP BY br.reviewed_by_user_id, u.name
+             ORDER BY total DESC
+             LIMIT 10`,
+            revParams
+        )
+        const top_reviewers = reviewerRows.map((row) => ({
+            user_id: row.user_id,
+            user_name: row.user_name,
+            total: Number(row.total)
+        }))
+
+        // --- Archivos: total, descargas, nunca descargados, top descargados ---
+        const filesParams: any[] = []
+        const [fileRows] = await this.pool.execute<RowDataPacket[]>(
+            `SELECT f.id as file_id, f.original_name, br.folio, COUNT(d.id) as download_count
+             FROM bulk_request_files f
+             JOIN bulk_requests br ON f.bulk_request_id = br.id
+             LEFT JOIN bulk_request_file_downloads d ON d.bulk_request_file_id = f.id
+             ${buildWhere('br', filesParams)}
+             GROUP BY f.id, f.original_name, br.folio
+             ORDER BY download_count DESC`,
+            filesParams
+        )
+        const allFiles = fileRows.map((row) => ({
+            file_id: row.file_id,
+            original_name: row.original_name,
+            folio: row.folio,
+            download_count: Number(row.download_count)
+        }))
+        const total_files = allFiles.length
+        const total_downloads = allFiles.reduce((sum, f) => sum + f.download_count, 0)
+        const never_downloaded_count = allFiles.filter((f) => f.download_count === 0).length
+        const top_files = allFiles.slice(0, 10)
+
+        return {
+            summary: { total, by_status, by_branch, by_priority },
+            resolution: { overall_avg_hours, by_branch: resolution_by_branch, by_reviewer: resolution_by_reviewer },
+            users: { top_requesters, top_reviewers },
+            files: { total_files, total_downloads, never_downloaded_count, top_files }
+        }
+    }
 }
 
 export const reportsService = new ReportsService()

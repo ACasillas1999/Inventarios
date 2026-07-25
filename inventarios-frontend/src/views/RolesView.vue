@@ -20,6 +20,8 @@ const availablePermissions = [
   { id: 'counts.update', label: 'Capturar conteos (stock)' },
   { id: 'requests.create', label: 'Crear solicitudes de ajuste' },
   { id: 'requests.update', label: 'Gestionar solicitudes (aprobar/rechazar)' },
+  { id: 'bulk_requests.create', label: 'Crear diferencias masivas' },
+  { id: 'bulk_requests.manage', label: 'Dar seguimiento a diferencias masivas' },
   { id: 'stock.view', label: 'Consultar existencias' },
   { id: 'reports.view', label: 'Ver reportes y auditoría' },
   { id: 'reports.export', label: 'Exportar reportes' }

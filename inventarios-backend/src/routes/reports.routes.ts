@@ -13,5 +13,6 @@ router.get('/line-stats', reportsController.getLineStats)
 router.get('/productivity', reportsController.getProductivityStats)
 router.get('/adjustments', reportsController.getAdjustmentsReport)
 router.get('/priority-times', reportsController.getPriorityTimesReport)
+router.get('/bulk-requests', reportsController.getBulkRequestsReport)
 
 export default router

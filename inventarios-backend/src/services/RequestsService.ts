@@ -2,8 +2,16 @@ import { getLocalPool } from '../config/database'
 import { RowDataPacket } from 'mysql2/promise'
 import { emitRequestStatus } from '../websocket/server'
 import { auditService } from './AuditService'
+import { inAppNotificationsService } from './InAppNotificationsService'
 
 export type RequestStatus = 'pendiente' | 'en_revision' | 'ajustado' | 'rechazado'
+
+const requestStatusLabel: Record<RequestStatus, string> = {
+  pendiente: 'Pendiente',
+  en_revision: 'En revisión',
+  ajustado: 'Ajustado',
+  rechazado: 'Rechazado'
+}
 
 const requestStatusTransitions: Record<RequestStatus, RequestStatus[]> = {
   pendiente: ['en_revision'],
@@ -81,6 +89,8 @@ export class RequestsService {
     count_id?: number
     surtidor_id?: number
     priority?: string
+    date_from?: string
+    date_to?: string
     limit?: number
     offset?: number
   }): Promise<{ requests: RequestRow[]; total: number }> {
@@ -136,6 +146,18 @@ export class RequestsService {
       query += ' AND c.priority = ?'
       countQuery += ' AND c.priority = ?'
       params.push(filters.priority)
+    }
+
+    if (filters.date_from) {
+      query += ' AND r.created_at >= ?'
+      countQuery += ' AND r.created_at >= ?'
+      params.push(`${filters.date_from} 00:00:00`)
+    }
+
+    if (filters.date_to) {
+      query += ' AND r.created_at <= ?'
+      countQuery += ' AND r.created_at <= ?'
+      params.push(`${filters.date_to} 23:59:59`)
     }
 
     query += ' ORDER BY r.created_at DESC'
@@ -226,6 +248,17 @@ export class RequestsService {
         entity_id: id,
         old_values: existing,
         new_values: data
+      })
+
+      const recipients = await inAppNotificationsService.getRequestRecipients(id, data.reviewed_by_user_id)
+      await inAppNotificationsService.notify(recipients, {
+        actor_user_id: data.reviewed_by_user_id,
+        type: 'request_status',
+        entity_type: 'request',
+        entity_id: id,
+        title: `Cambio de estatus: ${updated.folio}`,
+        body: `${requestStatusLabel[existing.status]} → ${requestStatusLabel[data.status as RequestStatus]}`,
+        link: `/solicitudes?open=${id}`
       })
     }
 

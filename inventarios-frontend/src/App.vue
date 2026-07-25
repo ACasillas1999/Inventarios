@@ -2,10 +2,12 @@
 import { computed, ref, watch, provide, onMounted, onBeforeUnmount } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
+import NotificationBell from './components/NotificationBell.vue'
 import {
   IconArrowsDiff,
   IconBuildingStore,
   IconBuildingWarehouse,
+  IconFileSpreadsheet,
   IconLayoutDashboard,
   IconListDetails,
   IconPackage,
@@ -105,6 +107,11 @@ const navSections = computed(() => [
         to: '/solicitudes',
         icon: IconArrowsDiff,
       },
+      {
+        label: 'Diferencias masivas',
+        to: '/solicitudes-masivas',
+        icon: IconFileSpreadsheet,
+      },
     ],
   },
   {
@@ -125,6 +132,11 @@ const navSections = computed(() => [
         label: 'Reporte de Ajustes',
         to: '/reportes/ajustes',
         icon: IconArrowsDiff,
+      },
+      {
+        label: 'Diferencias masivas',
+        to: '/reportes/diferencias-masivas',
+        icon: IconFileSpreadsheet,
       },
     ],
   },
@@ -264,6 +276,7 @@ const navSections = computed(() => [
           <h1>{{ pageTitle }}</h1>
         </div>
         <div class="top-actions">
+          <NotificationBell />
           <div class="user-info">
             <div class="user-details">
               <span class="user-name">{{ authStore.userName }}</span>

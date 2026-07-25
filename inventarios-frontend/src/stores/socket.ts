@@ -25,6 +25,7 @@ export const useSocketStore = defineStore('socket', () => {
     const path = '/ws'
     const connectedCountRooms = new Set<number>()
     const connectedRequestRooms = new Set<number>()
+    const connectedBulkRequestRooms = new Set<number>()
 
     const connect = () => {
         if (socket.value?.connected) return
@@ -54,6 +55,10 @@ export const useSocketStore = defineStore('socket', () => {
             connectedRequestRooms.forEach(id => {
                 console.log(`Re-joining request room: ${id}`)
                 socket.value?.emit('join_request', id)
+            })
+            connectedBulkRequestRooms.forEach(id => {
+                console.log(`Re-joining bulk request room: ${id}`)
+                socket.value?.emit('join_bulk_request', id)
             })
         })
 
@@ -120,6 +125,20 @@ export const useSocketStore = defineStore('socket', () => {
         }
     }
 
+    const joinBulkRequest = (bulkRequestId: number) => {
+        connectedBulkRequestRooms.add(bulkRequestId)
+        if (socket.value?.connected) {
+            socket.value.emit('join_bulk_request', bulkRequestId)
+        }
+    }
+
+    const leaveBulkRequest = (bulkRequestId: number) => {
+        connectedBulkRequestRooms.delete(bulkRequestId)
+        if (socket.value?.connected) {
+            socket.value.emit('leave_bulk_request', bulkRequestId)
+        }
+    }
+
     const on = (event: string, callback: (...args: any[]) => void) => {
         if (!socket.value) connect()
         console.log(`Registering listener for: ${event}`)
@@ -149,6 +168,8 @@ export const useSocketStore = defineStore('socket', () => {
         leaveCount,
         joinRequest,
         leaveRequest,
+        joinBulkRequest,
+        leaveBulkRequest,
         on,
         emit
     }

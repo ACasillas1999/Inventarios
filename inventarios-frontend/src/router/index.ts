@@ -8,6 +8,8 @@ import ItemsView from '@/views/ItemsView.vue'
 import LoginView from '@/views/LoginView.vue'
 import ReportsView from '@/views/ReportsView.vue'
 import RequestsView from '@/views/RequestsView.vue'
+import BulkRequestsView from '@/views/BulkRequestsView.vue'
+import BulkRequestsReportView from '@/views/BulkRequestsReportView.vue'
 import RolesView from '@/views/RolesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SpecialLinesView from '@/views/SpecialLinesView.vue'
@@ -85,6 +87,12 @@ const router = createRouter({
       meta: { title: 'Solicitudes por diferencias', section: 'Solicitudes' },
     },
     {
+      path: '/solicitudes-masivas',
+      name: 'solicitudes-masivas',
+      component: BulkRequestsView,
+      meta: { title: 'Diferencias masivas', section: 'Solicitudes' },
+    },
+    {
       path: '/reportes',
       name: 'reportes',
       component: ReportsView,
@@ -101,6 +109,12 @@ const router = createRouter({
       name: 'reportes-ajustes',
       component: AdjustmentsReportView,
       meta: { title: 'Reporte de Ajustes', section: 'Reportes' },
+    },
+    {
+      path: '/reportes/diferencias-masivas',
+      name: 'reportes-diferencias-masivas',
+      component: BulkRequestsReportView,
+      meta: { title: 'Reporte de Diferencias masivas', section: 'Reportes' },
     },
     {
       path: '/lineas-especiales',
