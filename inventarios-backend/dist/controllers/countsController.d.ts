@@ -54,7 +54,7 @@ export declare const updateCountDetail: (req: AuthRequest, res: Response) => Pro
  * Obtiene estadísticas del dashboard
  * GET /api/counts/stats/dashboard
  */
-export declare const getDashboardStats: (_req: AuthRequest, res: Response) => Promise<void>;
+export declare const getDashboardStats: (req: AuthRequest, res: Response) => Promise<void>;
 /**
  * Lista diferencias de conteos
  * GET /api/counts/differences
@@ -76,7 +76,7 @@ declare const _default: {
     getCountDetails: (req: AuthRequest, res: Response) => Promise<void>;
     addCountDetail: (req: AuthRequest, res: Response) => Promise<void>;
     updateCountDetail: (req: AuthRequest, res: Response) => Promise<void>;
-    getDashboardStats: (_req: AuthRequest, res: Response) => Promise<void>;
+    getDashboardStats: (req: AuthRequest, res: Response) => Promise<void>;
     listDifferences: (req: AuthRequest, res: Response) => Promise<void>;
     deleteCount: (req: AuthRequest, res: Response) => Promise<void>;
 };

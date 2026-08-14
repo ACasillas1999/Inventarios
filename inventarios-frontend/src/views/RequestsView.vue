@@ -94,6 +94,14 @@ const statusClass = (status: string) => {
   return 'closed'
 }
 
+const classificationLabel: Record<string, string> = {
+  inventario: 'Inventario',
+  ajuste: 'Ajuste directo',
+  migracion: 'Migración',
+  robo: 'Salida por Robo',
+  garantia: 'Salida por Garantía'
+}
+
 const requestStatusOptions: RequestStatus[] = ['pendiente', 'en_revision', 'ajustado', 'rechazado']
 const requestStatusTransitions: Record<RequestStatus, RequestStatus[]> = {
   pendiente: ['en_revision'],
@@ -991,8 +999,8 @@ onBeforeUnmount(() => {
                   >
                     {{ row.count_folio || `#${row.count_id}` }}
                   </router-link>
-                  <span v-if="row.count_classification" :class="['tag', row.count_classification === 'ajuste' || row.count_classification === 'migracion' ? 'accent' : '']" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">
-                    {{ row.count_classification === 'ajuste' ? 'Ajuste directo' : (row.count_classification === 'migracion' ? 'Migración' : 'Conteo normal') }}
+                  <span v-if="row.count_classification" :class="['tag', ['ajuste', 'migracion', 'robo', 'garantia'].includes(row.count_classification) ? 'accent' : '']" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">
+                    {{ classificationLabel[row.count_classification] || row.count_classification }}
                   </span>
                 </div>
               </td>

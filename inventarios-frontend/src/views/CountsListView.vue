@@ -261,8 +261,12 @@ const typeLabel: Record<string, string> = {
 const classificationLabel: Record<string, string> = {
   inventario: 'Inventario',
   ajuste: 'Ajuste',
-  migracion: 'Migración'
+  migracion: 'Migración',
+  robo: 'Salida por Robo',
+  garantia: 'Salida por Garantía'
 }
+
+const isDirectAdjustment = (c?: string) => c === 'ajuste' || c === 'migracion' || c === 'robo' || c === 'garantia'
 
 const priorityLabel: Record<string, string> = {
   baja: 'Baja',
@@ -670,7 +674,7 @@ const createCount = async () => {
     let finalItems = items
 
     let itemsData: Array<{ item_code: string; count: number }> | undefined = undefined
-    if ((newCountForm.classification === 'ajuste' || newCountForm.classification === 'migracion') && !selectAllFromLine.value) {
+    if (isDirectAdjustment(newCountForm.classification) && !selectAllFromLine.value) {
        itemsData = []
        for (const code of finalItems) {
          const qty = modalAdjustmentQuantities.value[code]
@@ -1312,6 +1316,9 @@ watch(counts, (newCounts) => {
                 <option value="">Todas</option>
                 <option value="inventario">Inventario</option>
                 <option value="ajuste">Ajuste</option>
+                <option value="migracion">Migración</option>
+                <option value="robo">Salida por Robo</option>
+                <option value="garantia">Salida por Garantía</option>
               </select>
             </div>
             <div>
@@ -1386,7 +1393,7 @@ watch(counts, (newCounts) => {
             <div class="count-card-details">
               <div class="count-detail-item">
                 <span class="detail-label">CLASIFICACIÓN</span>
-                <span class="detail-value" :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
+                <span class="detail-value" :style="{ color: isDirectAdjustment(count.classification) ? 'var(--accent)' : 'inherit' }">
                   {{ classificationLabel[count.classification] || count.classification }}
                 </span>
               </div>
@@ -1552,7 +1559,7 @@ watch(counts, (newCounts) => {
                   <span v-else class="muted">Almacén {{ count.almacen || 1 }}</span>
                 </td>
                 <td data-label="Clasificación">
-                  <strong :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
+                  <strong :style="{ color: isDirectAdjustment(count.classification) ? 'var(--accent)' : 'inherit' }">
                     {{ classificationLabel[count.classification] || count.classification }}
                   </strong>
                 </td>
@@ -1632,7 +1639,7 @@ watch(counts, (newCounts) => {
                   </td>
                   <td>{{ branchNameById.get(count.branch_id) || `ID ${count.branch_id}` }}</td>
                   <td>
-                    <strong :style="{ color: (count.classification === 'ajuste' || count.classification === 'migracion') ? 'var(--accent)' : 'inherit' }">
+                    <strong :style="{ color: isDirectAdjustment(count.classification) ? 'var(--accent)' : 'inherit' }">
                       {{ classificationLabel[count.classification] || count.classification }}
                     </strong>
                   </td>
@@ -1762,6 +1769,8 @@ watch(counts, (newCounts) => {
               <option v-if="!isGerenteRole" value="inventario">Inventario</option>
               <option value="ajuste">Ajuste</option>
               <option value="migracion">Migración</option>
+              <option value="robo">Salida por Robo</option>
+              <option value="garantia">Salida por Garantía</option>
             </select>
           </div>
           <div>
@@ -1942,7 +1951,7 @@ watch(counts, (newCounts) => {
                   </div>
                 </label>
 
-                <div v-if="(newCountForm.classification === 'ajuste' || newCountForm.classification === 'migracion') && (selectedItemCodes.has(it.codigo) || selectAllFromLine)" class="adj-qty">
+                <div v-if="isDirectAdjustment(newCountForm.classification) && (selectedItemCodes.has(it.codigo) || selectAllFromLine)" class="adj-qty">
                    <input 
                       type="number" 
                       placeholder="Cant."

@@ -222,6 +222,9 @@ const displayType = computed(() => {
   const typeMap: Record<string, string> = {
     'inventario': 'Inventario',
     'ajuste': 'Ajuste',
+    'migracion': 'Migración',
+    'robo': 'Salida por Robo',
+    'garantia': 'Salida por Garantía',
     'ciclico': 'Cíclico'
   }
   return typeMap[classification.toLowerCase()] || classification

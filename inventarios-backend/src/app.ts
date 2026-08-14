@@ -132,7 +132,7 @@ const initializeDatabases = async (): Promise<void> => {
     logger.info('Local database connected successfully')
 
     try {
-      await localPool.query("ALTER TABLE counts MODIFY COLUMN classification ENUM('inventario', 'ajuste', 'migracion') NOT NULL DEFAULT 'inventario'")
+      await localPool.query("ALTER TABLE counts MODIFY COLUMN classification ENUM('inventario', 'ajuste', 'migracion', 'robo', 'garantia') NOT NULL DEFAULT 'inventario'")
       logger.info('Migration for classification ENUM executed successfully')
       
       const rolesSql = `INSERT IGNORE INTO roles (name, display_name, description, permissions, created_at, updated_at) VALUES 

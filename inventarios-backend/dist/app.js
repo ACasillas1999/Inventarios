@@ -22,6 +22,7 @@ const ConnectionManager_1 = require("./connections/ConnectionManager");
 const database_1 = require("./config/database");
 const server_1 = require("./websocket/server");
 const initSettings_1 = require("./utils/initSettings");
+const upload_1 = require("./middlewares/upload");
 // Importar rutas
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const stock_routes_1 = __importDefault(require("./routes/stock.routes"));
@@ -29,6 +30,8 @@ const counts_routes_1 = __importDefault(require("./routes/counts.routes"));
 const branches_routes_1 = __importDefault(require("./routes/branches.routes"));
 const users_routes_1 = __importDefault(require("./routes/users.routes"));
 const requests_routes_1 = __importDefault(require("./routes/requests.routes"));
+const bulkRequests_routes_1 = __importDefault(require("./routes/bulkRequests.routes"));
+const notifications_routes_1 = __importDefault(require("./routes/notifications.routes"));
 const roles_routes_1 = __importDefault(require("./routes/roles.routes"));
 const special_lines_routes_1 = __importDefault(require("./routes/special-lines.routes"));
 const reports_routes_1 = __importDefault(require("./routes/reports.routes"));
@@ -85,6 +88,8 @@ const createApp = () => {
     app.use('/api/branches', branches_routes_1.default);
     app.use('/api/users', users_routes_1.default);
     app.use('/api/requests', requests_routes_1.default);
+    app.use('/api/bulk-requests', bulkRequests_routes_1.default);
+    app.use('/api/notifications', notifications_routes_1.default);
     app.use('/api/roles', roles_routes_1.default);
     app.use('/api/special-lines', special_lines_routes_1.default);
     app.use('/api/reports', reports_routes_1.default);
@@ -117,7 +122,7 @@ const initializeDatabases = async () => {
         await localPool.query('SELECT 1');
         logger_1.logger.info('Local database connected successfully');
         try {
-            await localPool.query("ALTER TABLE counts MODIFY COLUMN classification ENUM('inventario', 'ajuste', 'migracion') NOT NULL DEFAULT 'inventario'");
+            await localPool.query("ALTER TABLE counts MODIFY COLUMN classification ENUM('inventario', 'ajuste', 'migracion', 'robo', 'garantia') NOT NULL DEFAULT 'inventario'");
             logger_1.logger.info('Migration for classification ENUM executed successfully');
             const rolesSql = `INSERT IGNORE INTO roles (name, display_name, description, permissions, created_at, updated_at) VALUES 
         ('gerente', 'Gerente', 'Gerente de sucursal', '["counts.view", "counts.create"]', NOW(), NOW()),
@@ -127,6 +132,161 @@ const initializeDatabases = async () => {
         }
         catch (err) {
             logger_1.logger.warn('Migration warning:', err.message);
+        }
+        try {
+            await localPool.query(`
+        CREATE TABLE IF NOT EXISTS bulk_requests (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          folio VARCHAR(50) NOT NULL UNIQUE,
+          branch_id INT NOT NULL,
+          warehouse_id INT NOT NULL,
+          warehouse_name VARCHAR(255),
+          classification ENUM('ajuste') NOT NULL DEFAULT 'ajuste',
+          priority ENUM('baja', 'media', 'alta', 'urgente', 'mostrador') DEFAULT 'media',
+          responsible_user_id INT NOT NULL,
+          requested_by_user_id INT NOT NULL,
+          notes TEXT NOT NULL,
+          status ENUM('pendiente', 'en_revision', 'ajustado', 'rechazado') DEFAULT 'pendiente',
+          movement_number VARCHAR(100),
+          resolution_notes TEXT,
+          reviewed_by_user_id INT,
+          reviewed_at TIMESTAMP NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (branch_id) REFERENCES branches(id),
+          FOREIGN KEY (responsible_user_id) REFERENCES users(id),
+          FOREIGN KEY (requested_by_user_id) REFERENCES users(id),
+          FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id),
+          INDEX idx_folio (folio),
+          INDEX idx_branch (branch_id),
+          INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+            await localPool.query(`
+        CREATE TABLE IF NOT EXISTS bulk_request_files (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          bulk_request_id INT NOT NULL,
+          original_name VARCHAR(500) NOT NULL,
+          stored_name VARCHAR(500) NOT NULL,
+          mime_type VARCHAR(150),
+          size_bytes INT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (bulk_request_id) REFERENCES bulk_requests(id) ON DELETE CASCADE,
+          INDEX idx_bulk_request (bulk_request_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+            await localPool.query(`
+        CREATE TABLE IF NOT EXISTS bulk_request_file_downloads (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          bulk_request_file_id INT NOT NULL,
+          user_id INT NOT NULL,
+          downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (bulk_request_file_id) REFERENCES bulk_request_files(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          INDEX idx_file (bulk_request_file_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+            await localPool.query(`
+        UPDATE roles
+        SET permissions = JSON_ARRAY_APPEND(permissions, '$', 'bulk_requests.create')
+        WHERE name IN ('jefe_inventarios', 'e_inventarios', 'gerente', 'auxiliar_gerente')
+          AND NOT JSON_CONTAINS(permissions, '"bulk_requests.create"')
+      `);
+            await localPool.query(`
+        UPDATE roles
+        SET permissions = JSON_ARRAY_APPEND(permissions, '$', 'bulk_requests.manage')
+        WHERE name IN ('jefe_inventarios', 'e_inventarios')
+          AND NOT JSON_CONTAINS(permissions, '"bulk_requests.manage"')
+      `);
+            await localPool.query(`
+        CREATE TABLE IF NOT EXISTS bulk_request_comments (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          bulk_request_id INT NOT NULL,
+          user_id INT NOT NULL,
+          message TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (bulk_request_id) REFERENCES bulk_requests(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          INDEX idx_bulk_request (bulk_request_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+            logger_1.logger.info('Bulk requests migration executed successfully');
+        }
+        catch (err) {
+            logger_1.logger.warn('Bulk requests migration warning:', err.message);
+        }
+        try {
+            await localPool.query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT NOT NULL,
+          actor_user_id INT,
+          type VARCHAR(50) NOT NULL,
+          entity_type VARCHAR(30) NOT NULL,
+          entity_id INT NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          body TEXT,
+          link VARCHAR(500) NOT NULL,
+          is_read TINYINT(1) NOT NULL DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (actor_user_id) REFERENCES users(id),
+          INDEX idx_user_unread (user_id, is_read),
+          INDEX idx_user_created (user_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+            logger_1.logger.info('Notifications migration executed successfully');
+        }
+        catch (err) {
+            logger_1.logger.warn('Notifications migration warning:', err.message);
+        }
+        try {
+            await localPool.query(`
+        CREATE TABLE IF NOT EXISTS request_comments (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          request_id INT NOT NULL,
+          user_id INT NOT NULL,
+          message TEXT NOT NULL,
+          attachment_original_name VARCHAR(500) NULL,
+          attachment_stored_name VARCHAR(500) NULL,
+          attachment_mime_type VARCHAR(150) NULL,
+          attachment_size_bytes INT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          INDEX idx_request (request_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+            logger_1.logger.info('request_comments table verified');
+        }
+        catch (err) {
+            logger_1.logger.warn('request_comments table migration warning:', err.message);
+        }
+        try {
+            await localPool.query(`
+        ALTER TABLE request_comments
+          ADD COLUMN IF NOT EXISTS attachment_original_name VARCHAR(500) NULL,
+          ADD COLUMN IF NOT EXISTS attachment_stored_name VARCHAR(500) NULL,
+          ADD COLUMN IF NOT EXISTS attachment_mime_type VARCHAR(150) NULL,
+          ADD COLUMN IF NOT EXISTS attachment_size_bytes INT NULL
+      `);
+            logger_1.logger.info('request_comments attachment columns verified');
+        }
+        catch (err) {
+            logger_1.logger.warn('request_comments attachment columns migration warning:', err.message);
+        }
+        try {
+            await localPool.query(`
+        ALTER TABLE bulk_request_comments
+          ADD COLUMN IF NOT EXISTS attachment_original_name VARCHAR(500) NULL,
+          ADD COLUMN IF NOT EXISTS attachment_stored_name VARCHAR(500) NULL,
+          ADD COLUMN IF NOT EXISTS attachment_mime_type VARCHAR(150) NULL,
+          ADD COLUMN IF NOT EXISTS attachment_size_bytes INT NULL
+      `);
+            logger_1.logger.info('bulk_request_comments attachment columns verified');
+        }
+        catch (err) {
+            logger_1.logger.warn('bulk_request_comments attachment columns migration warning:', err.message);
         }
         // Inicializar conexiones a sucursales
         const branchDatabases = await (0, database_1.getBranchDatabases)();
@@ -163,6 +323,8 @@ const startServer = async () => {
     try {
         // Asegurar que existe el directorio de logs
         ensureLogsDirectory();
+        (0, upload_1.ensureUploadsDirectory)();
+        (0, upload_1.ensureChatAttachmentsDirectory)();
         logger_1.logger.info('Starting Inventarios Backend...');
         logger_1.logger.info(`Environment: ${NODE_ENV}`);
         logger_1.logger.info(`Port: ${PORT}`);

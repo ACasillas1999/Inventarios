@@ -132,6 +132,64 @@ export declare class ReportsService {
             elapsed_formatted: string;
         }[];
     }>;
+    /**
+     * Reporte de Diferencias masivas (bulk_requests): resumen por estatus/sucursal/prioridad,
+     * tiempos de resolución, ranking de usuarios y detalle de archivos adjuntos.
+     */
+    getBulkRequestsReport(filters: {
+        branch_id?: number;
+        status?: string;
+        date_from?: string;
+        date_to?: string;
+    }): Promise<{
+        summary: {
+            total: number;
+            by_status: Record<string, number>;
+            by_branch: any[];
+            by_priority: {
+                priority: any;
+                total: number;
+            }[];
+        };
+        resolution: {
+            overall_avg_hours: number | null;
+            by_branch: {
+                branch_id: any;
+                branch_name: any;
+                avg_hours: number;
+                resolved_count: number;
+            }[];
+            by_reviewer: {
+                user_id: any;
+                user_name: any;
+                avg_hours: number;
+                resolved_count: number;
+            }[];
+        };
+        users: {
+            top_requesters: {
+                user_id: any;
+                user_name: any;
+                total: number;
+            }[];
+            top_reviewers: {
+                user_id: any;
+                user_name: any;
+                total: number;
+            }[];
+        };
+        files: {
+            total_files: number;
+            total_downloads: number;
+            never_downloaded_count: number;
+            top_files: {
+                file_id: any;
+                original_name: any;
+                folio: any;
+                download_count: number;
+            }[];
+        };
+    }>;
 }
 export declare const reportsService: ReportsService;
 export default reportsService;

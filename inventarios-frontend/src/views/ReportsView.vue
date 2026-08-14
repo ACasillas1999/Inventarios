@@ -477,6 +477,9 @@ onBeforeUnmount(() => {
           <option value="">Todas</option>
           <option value="inventario">Inventario</option>
           <option value="ajuste">Ajuste</option>
+          <option value="migracion">Migración</option>
+          <option value="robo">Salida por Robo</option>
+          <option value="garantia">Salida por Garantía</option>
         </select>
       </div>
       <div>

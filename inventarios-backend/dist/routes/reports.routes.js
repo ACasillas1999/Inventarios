@@ -15,5 +15,6 @@ router.get('/line-stats', reportsController_1.default.getLineStats);
 router.get('/productivity', reportsController_1.default.getProductivityStats);
 router.get('/adjustments', reportsController_1.default.getAdjustmentsReport);
 router.get('/priority-times', reportsController_1.default.getPriorityTimesReport);
+router.get('/bulk-requests', reportsController_1.default.getBulkRequestsReport);
 exports.default = router;
 //# sourceMappingURL=reports.routes.js.map

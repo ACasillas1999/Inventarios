@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { branchesService, countsService, stockService, usersService, type Branch } from '@/services/api'
 import MobileMenuToggle from '@/components/MobileMenuToggle.vue'
@@ -399,6 +399,9 @@ const openQuickCount = async (itemCode: string, warehouseId: number) => {
           <select id="swal-classification" class="swal2-input" style="margin: 0; width: 100%;">
             <option value="inventario">Inventario</option>
             <option value="ajuste">Ajuste</option>
+            <option value="migracion">Migración</option>
+            <option value="robo">Salida por Robo</option>
+            <option value="garantia">Salida por Garantía</option>
             <option value="auditoria">Auditoría</option>
           </select>
         </label>

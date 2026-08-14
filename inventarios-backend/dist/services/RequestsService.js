@@ -4,6 +4,13 @@ exports.RequestsService = void 0;
 const database_1 = require("../config/database");
 const server_1 = require("../websocket/server");
 const AuditService_1 = require("./AuditService");
+const InAppNotificationsService_1 = require("./InAppNotificationsService");
+const requestStatusLabel = {
+    pendiente: 'Pendiente',
+    en_revision: 'En revisión',
+    ajustado: 'Ajustado',
+    rechazado: 'Rechazado'
+};
 const requestStatusTransitions = {
     pendiente: ['en_revision'],
     en_revision: ['ajustado', 'rechazado'],
@@ -84,6 +91,16 @@ class RequestsService {
             countQuery += ' AND c.priority = ?';
             params.push(filters.priority);
         }
+        if (filters.date_from) {
+            query += ' AND r.created_at >= ?';
+            countQuery += ' AND r.created_at >= ?';
+            params.push(`${filters.date_from} 00:00:00`);
+        }
+        if (filters.date_to) {
+            query += ' AND r.created_at <= ?';
+            countQuery += ' AND r.created_at <= ?';
+            params.push(`${filters.date_to} 23:59:59`);
+        }
         query += ' ORDER BY r.created_at DESC';
         const limit = typeof filters.limit === 'number' ? filters.limit : 50;
         const offset = typeof filters.offset === 'number' ? filters.offset : 0;
@@ -151,6 +168,16 @@ class RequestsService {
                 entity_id: id,
                 old_values: existing,
                 new_values: data
+            });
+            const recipients = await InAppNotificationsService_1.inAppNotificationsService.getRequestRecipients(id, data.reviewed_by_user_id);
+            await InAppNotificationsService_1.inAppNotificationsService.notify(recipients, {
+                actor_user_id: data.reviewed_by_user_id,
+                type: 'request_status',
+                entity_type: 'request',
+                entity_id: id,
+                title: `Cambio de estatus: ${updated.folio}`,
+                body: `${requestStatusLabel[existing.status]} → ${requestStatusLabel[data.status]}`,
+                link: `/solicitudes?open=${id}`
             });
         }
         return updated;

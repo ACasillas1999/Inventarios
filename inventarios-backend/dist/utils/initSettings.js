@@ -10,6 +10,7 @@ async function ensureBaseSettings() {
     const pool = (0, database_1.getLocalPool)();
     const baseSettings = [
         { key: 'folio_format', value: 'CNT-{YEAR}{MONTH}-{NUMBER}', type: 'string', desc: 'Formato de folio de conteos (Soportados: {YEAR}, {MONTH}, {DAY}, {NUMBER})' },
+        { key: 'bulk_folio_format', value: 'DIFM-{YEAR}{MONTH}-{NUMBER}', type: 'string', desc: 'Formato de folio de diferencias masivas (Soportados: {YEAR}, {MONTH}, {DAY}, {NUMBER})' },
         { key: 'pagination_limit', value: '50', type: 'number', desc: 'Registros por página por defecto' },
         { key: 'timezone', value: 'America/Mexico_City', type: 'string', desc: 'Zona horaria para timestamps' },
         { key: 'db_default_host', value: 'localhost', type: 'string', desc: 'Host por defecto para nuevas sucursales' },

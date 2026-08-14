@@ -355,9 +355,11 @@ exports.updateCountDetail = updateCountDetail;
  * Obtiene estadísticas del dashboard
  * GET /api/counts/stats/dashboard
  */
-const getDashboardStats = async (_req, res) => {
+const getDashboardStats = async (req, res) => {
     try {
-        const stats = await countsService.getDashboardStats();
+        const year = req.query.year ? parseInt(req.query.year) : undefined;
+        const month = req.query.month ? parseInt(req.query.month) : undefined;
+        const stats = await countsService.getDashboardStats(year, month);
         res.json(stats);
     }
     catch (error) {

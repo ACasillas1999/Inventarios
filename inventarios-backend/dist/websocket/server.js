@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.emitRequestComment = exports.emitCountReassigned = exports.emitToRole = exports.emitToUser = exports.emitToRoom = exports.emitCountDetailAdded = exports.emitCountStatusChanged = exports.emitCountCreated = exports.emitRequestCreated = exports.emitRequestStatus = exports.emitCountProgress = exports.emitStockUpdate = exports.getWebSocketServer = exports.initializeWebSocket = void 0;
+exports.emitBulkRequestComment = exports.emitNotification = exports.emitRequestComment = exports.emitCountReassigned = exports.emitToRole = exports.emitToUser = exports.emitToRoom = exports.emitCountDetailAdded = exports.emitCountStatusChanged = exports.emitCountCreated = exports.emitRequestCreated = exports.emitBulkRequestCreated = exports.emitBulkRequestStatus = exports.emitRequestStatus = exports.emitCountProgress = exports.emitStockUpdate = exports.getWebSocketServer = exports.initializeWebSocket = void 0;
 const socket_io_1 = require("socket.io");
 const auth_1 = require("../middlewares/auth");
 const logger_1 = require("../utils/logger");
@@ -65,6 +65,14 @@ const initializeWebSocket = (httpServer) => {
         socket.on('leave_request', (requestId) => {
             socket.leave(`request:${requestId}`);
             logger_1.logger.debug(`User ${user.id} left request ${requestId}`);
+        });
+        socket.on('join_bulk_request', (bulkRequestId) => {
+            socket.join(`bulk_request:${bulkRequestId}`);
+            logger_1.logger.debug(`User ${user.id} joined bulk request ${bulkRequestId}`);
+        });
+        socket.on('leave_bulk_request', (bulkRequestId) => {
+            socket.leave(`bulk_request:${bulkRequestId}`);
+            logger_1.logger.debug(`User ${user.id} left bulk request ${bulkRequestId}`);
         });
         // Desconexión
         socket.on('disconnect', () => {
@@ -141,6 +149,39 @@ const emitRequestStatus = (requestId, folio, oldStatus, newStatus) => {
     logger_1.logger.debug(`Request status change emitted for request ${requestId}: ${oldStatus} -> ${newStatus}`);
 };
 exports.emitRequestStatus = emitRequestStatus;
+/**
+ * Emite un evento de cambio de estado de solicitud masiva
+ */
+const emitBulkRequestStatus = (bulkRequestId, folio, oldStatus, newStatus) => {
+    if (!io)
+        return;
+    io.emit('bulk_request_status', {
+        type: 'bulk_request_status',
+        data: {
+            bulk_request_id: bulkRequestId,
+            folio,
+            old_status: oldStatus,
+            new_status: newStatus
+        },
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Bulk request status change emitted for bulk request ${bulkRequestId}: ${oldStatus} -> ${newStatus}`);
+};
+exports.emitBulkRequestStatus = emitBulkRequestStatus;
+/**
+ * Emite un evento cuando se crea una nueva solicitud masiva
+ */
+const emitBulkRequestCreated = (bulkRequest) => {
+    if (!io)
+        return;
+    io.emit('bulk_request_created', {
+        type: 'bulk_request_created',
+        data: bulkRequest,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Bulk request created emitted: ${bulkRequest.folio}`);
+};
+exports.emitBulkRequestCreated = emitBulkRequestCreated;
 /**
  * Emite un evento cuando se crea una nueva solicitud
  */
@@ -276,6 +317,34 @@ const emitRequestComment = (requestId, comment) => {
     logger_1.logger.debug(`Request comment emitted for request ${requestId}`);
 };
 exports.emitRequestComment = emitRequestComment;
+/**
+ * Emite una notificación en vivo a un usuario (sala user:{id}, ya se une todo socket al conectar)
+ */
+const emitNotification = (userId, notification) => {
+    if (!io)
+        return;
+    io.to(`user:${userId}`).emit('notification', {
+        type: 'notification',
+        data: notification,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Notification emitted to user ${userId}: ${notification.type}`);
+};
+exports.emitNotification = emitNotification;
+/**
+ * Emite un nuevo comentario de solicitud masiva a todos los usuarios en la sala de esa solicitud
+ */
+const emitBulkRequestComment = (bulkRequestId, comment) => {
+    if (!io)
+        return;
+    io.to(`bulk_request:${bulkRequestId}`).emit('bulk_request_comment', {
+        type: 'bulk_request_comment',
+        data: comment,
+        timestamp: new Date()
+    });
+    logger_1.logger.debug(`Bulk request comment emitted for bulk request ${bulkRequestId}`);
+};
+exports.emitBulkRequestComment = emitBulkRequestComment;
 exports.default = {
     initializeWebSocket: exports.initializeWebSocket,
     getWebSocketServer: exports.getWebSocketServer,
@@ -283,6 +352,10 @@ exports.default = {
     emitCountProgress: exports.emitCountProgress,
     emitRequestStatus: exports.emitRequestStatus,
     emitRequestCreated: exports.emitRequestCreated,
+    emitBulkRequestStatus: exports.emitBulkRequestStatus,
+    emitBulkRequestCreated: exports.emitBulkRequestCreated,
+    emitBulkRequestComment: exports.emitBulkRequestComment,
+    emitNotification: exports.emitNotification,
     emitCountCreated: exports.emitCountCreated,
     emitCountStatusChanged: exports.emitCountStatusChanged,
     emitCountDetailAdded: exports.emitCountDetailAdded,

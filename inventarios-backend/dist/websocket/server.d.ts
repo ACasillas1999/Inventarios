@@ -21,6 +21,14 @@ export declare const emitCountProgress: (countId: number, folio: string, totalIt
  */
 export declare const emitRequestStatus: (requestId: number, folio: string, oldStatus: string, newStatus: string) => void;
 /**
+ * Emite un evento de cambio de estado de solicitud masiva
+ */
+export declare const emitBulkRequestStatus: (bulkRequestId: number, folio: string, oldStatus: string, newStatus: string) => void;
+/**
+ * Emite un evento cuando se crea una nueva solicitud masiva
+ */
+export declare const emitBulkRequestCreated: (bulkRequest: any) => void;
+/**
  * Emite un evento cuando se crea una nueva solicitud
  */
 export declare const emitRequestCreated: (request: any) => void;
@@ -56,6 +64,14 @@ export declare const emitCountReassigned: (countId: number, folio: string, oldRe
  * Emite un nuevo comentario de solicitud a todos los usuarios en la sala de esa solicitud
  */
 export declare const emitRequestComment: (requestId: number, comment: any) => void;
+/**
+ * Emite una notificación en vivo a un usuario (sala user:{id}, ya se une todo socket al conectar)
+ */
+export declare const emitNotification: (userId: number, notification: any) => void;
+/**
+ * Emite un nuevo comentario de solicitud masiva a todos los usuarios en la sala de esa solicitud
+ */
+export declare const emitBulkRequestComment: (bulkRequestId: number, comment: any) => void;
 declare const _default: {
     initializeWebSocket: (httpServer: HTTPServer) => SocketIOServer;
     getWebSocketServer: () => SocketIOServer | null;
@@ -63,6 +79,10 @@ declare const _default: {
     emitCountProgress: (countId: number, folio: string, totalItems: number, countedItems: number) => void;
     emitRequestStatus: (requestId: number, folio: string, oldStatus: string, newStatus: string) => void;
     emitRequestCreated: (request: any) => void;
+    emitBulkRequestStatus: (bulkRequestId: number, folio: string, oldStatus: string, newStatus: string) => void;
+    emitBulkRequestCreated: (bulkRequest: any) => void;
+    emitBulkRequestComment: (bulkRequestId: number, comment: any) => void;
+    emitNotification: (userId: number, notification: any) => void;
     emitCountCreated: (count: any) => void;
     emitCountStatusChanged: (countId: number, folio: string, oldStatus: string, newStatus: string) => void;
     emitCountDetailAdded: (countId: number, detail: any) => void;

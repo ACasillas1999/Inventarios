@@ -257,7 +257,7 @@ class CountsService {
             const branchName = branchRows[0]?.name || `Sucursal ${count.branch_id}`;
             const userName = userRows[0]?.name || 'Usuario';
             for (const req of toCreate) {
-                await NotificationService_1.notificationService.notifyRequestCreated(count.folio, branchName, count.branch_id, req.item_code, req.difference, userName, count.classification === 'migracion' ? 'migracion' : (count.classification === 'ajuste' ? 'direct' : 'count'));
+                await NotificationService_1.notificationService.notifyRequestCreated(count.folio, branchName, count.branch_id, req.item_code, req.difference, userName, count.classification === 'migracion' ? 'migracion' : (['ajuste', 'robo', 'garantia'].includes(count.classification) ? 'direct' : 'count'));
                 // Find the folio for this request from the folios array generated earlier
                 const reqIdx = toCreate.indexOf(req);
                 const reqFolio = folios[reqIdx];
@@ -341,7 +341,7 @@ class CountsService {
     async createCount(userId, data) {
         let itemsToCount = [];
         let itemsDataMap = new Map();
-        if ((data.classification === 'ajuste' || data.classification === 'migracion') && data.items_data?.length) {
+        if (['ajuste', 'migracion', 'robo', 'garantia'].includes(data.classification || '') && data.items_data?.length) {
             // Direct adjustment flow
             itemsToCount = data.items_data.map(i => i.item_code);
             data.items_data.forEach(i => itemsDataMap.set(i.item_code, i.count));
@@ -408,7 +408,7 @@ class CountsService {
         const createdCounts = [];
         const conn = await this.pool.getConnection();
         // Determine status: if direct adjustment, set to 'cerrado'
-        const isDirectAdjustment = (data.classification === 'ajuste' || data.classification === 'migracion') && itemsDataMap.size > 0;
+        const isDirectAdjustment = ['ajuste', 'migracion', 'robo', 'garantia'].includes(data.classification || '') && itemsDataMap.size > 0;
         const initialStatus = isDirectAdjustment ? 'cerrado' : 'pendiente';
         const now = new Date();
         try {
@@ -444,7 +444,7 @@ class CountsService {
                 const [result] = await conn.execute(query, params);
                 const insertId = result.insertId;
                 createdCountIds.push(insertId);
-                if ((data.classification === 'ajuste' || data.classification === 'migracion') && itemsDataMap.has(item)) {
+                if (['ajuste', 'migracion', 'robo', 'garantia'].includes(data.classification || '') && itemsDataMap.has(item)) {
                     // Direct adjustment: Create detail with counted stock
                     const countedStock = itemsDataMap.get(item);
                     await this.seedCountDetailsWithValues(conn, insertId, data.branch_id, item, selectedWarehouse, countedStock);
@@ -1287,7 +1287,10 @@ class CountsService {
      * Obtiene estadísticas del dashboard
      * Devuelve contadores globales, resumen por sucursal y conteos recientes
      */
-    async getDashboardStats() {
+    async getDashboardStats(year, month) {
+        const now = new Date();
+        const filterYear = typeof year === 'number' && !isNaN(year) ? year : now.getFullYear();
+        const filterMonth = typeof month === 'number' && !isNaN(month) ? month : (now.getMonth() + 1);
         // 1. Contadores globales
         const [globalRows] = await this.pool.execute(`
       SELECT
@@ -1299,7 +1302,8 @@ class CountsService {
         SUM(CASE WHEN status = 'cancelado' THEN 1 ELSE 0 END) as cancelled_counts,
         SUM(CASE WHEN status = 'pendiente' AND DATE(scheduled_date) = CURDATE() THEN 1 ELSE 0 END) as scheduled_today
       FROM counts
-    `);
+      WHERE YEAR(created_at) = ? AND MONTH(created_at) = ?
+    `, [filterYear, filterMonth]);
         const global = globalRows[0] || {};
         // 2. Resumen por sucursal
         const [branchRows] = await this.pool.execute(`
@@ -1314,11 +1318,11 @@ class CountsService {
         SUM(CASE WHEN c.status = 'cancelado' THEN 1 ELSE 0 END) as cancelled,
         MAX(c.created_at) as last_count_date
       FROM branches b
-      LEFT JOIN counts c ON c.branch_id = b.id
+      LEFT JOIN counts c ON c.branch_id = b.id AND YEAR(c.created_at) = ? AND MONTH(c.created_at) = ?
       GROUP BY b.id, b.name
       ORDER BY total DESC
-    `);
-        // 3. Conteos recientes (últimos 15)
+    `, [filterYear, filterMonth]);
+        // 3. Conteos recientes (últimos 15 del mes seleccionado)
         const [recentRows] = await this.pool.execute(`
       SELECT
         c.id,
@@ -1335,9 +1339,10 @@ class CountsService {
       FROM counts c
       LEFT JOIN branches b ON b.id = c.branch_id
       LEFT JOIN users u ON u.id = c.responsible_user_id
+      WHERE YEAR(c.created_at) = ? AND MONTH(c.created_at) = ?
       ORDER BY c.created_at DESC
       LIMIT 15
-    `);
+    `, [filterYear, filterMonth]);
         return {
             total_counts: Number(global.total_counts ?? 0),
             pending_counts: Number(global.pending_counts ?? 0),

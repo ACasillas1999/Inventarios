@@ -112,7 +112,7 @@ export declare class CountsService {
      * Obtiene estadísticas del dashboard
      * Devuelve contadores globales, resumen por sucursal y conteos recientes
      */
-    getDashboardStats(): Promise<any>;
+    getDashboardStats(year?: number, month?: number): Promise<any>;
     /**
      * Elimina un conteo (soft delete cambiando estado)
      */

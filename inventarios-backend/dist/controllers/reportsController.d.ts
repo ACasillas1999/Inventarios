@@ -7,6 +7,7 @@ export declare const getLineStats: (req: AuthRequest, res: Response) => Promise<
 export declare const getProductivityStats: (req: AuthRequest, res: Response) => Promise<void>;
 export declare const getAdjustmentsReport: (req: AuthRequest, res: Response) => Promise<void>;
 export declare const getPriorityTimesReport: (req: AuthRequest, res: Response) => Promise<void>;
+export declare const getBulkRequestsReport: (req: AuthRequest, res: Response) => Promise<void>;
 declare const _default: {
     getAuditKPIs: (req: AuthRequest, res: Response) => Promise<void>;
     getCompanyOverview: (req: AuthRequest, res: Response) => Promise<void>;
@@ -15,6 +16,7 @@ declare const _default: {
     getProductivityStats: (req: AuthRequest, res: Response) => Promise<void>;
     getAdjustmentsReport: (req: AuthRequest, res: Response) => Promise<void>;
     getPriorityTimesReport: (req: AuthRequest, res: Response) => Promise<void>;
+    getBulkRequestsReport: (req: AuthRequest, res: Response) => Promise<void>;
 };
 export default _default;
 //# sourceMappingURL=reportsController.d.ts.map

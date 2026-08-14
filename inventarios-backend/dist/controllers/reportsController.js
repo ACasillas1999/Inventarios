@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getPriorityTimesReport = exports.getAdjustmentsReport = exports.getProductivityStats = exports.getLineStats = exports.getCoverageReport = exports.getCompanyOverview = exports.getAuditKPIs = void 0;
+exports.getBulkRequestsReport = exports.getPriorityTimesReport = exports.getAdjustmentsReport = exports.getProductivityStats = exports.getLineStats = exports.getCoverageReport = exports.getCompanyOverview = exports.getAuditKPIs = void 0;
 const ReportsService_1 = __importDefault(require("../services/ReportsService"));
 const logger_1 = require("../utils/logger");
 const getAuditKPIs = async (req, res) => {
@@ -133,5 +133,25 @@ const getPriorityTimesReport = async (req, res) => {
     }
 };
 exports.getPriorityTimesReport = getPriorityTimesReport;
-exports.default = { getAuditKPIs: exports.getAuditKPIs, getCompanyOverview: exports.getCompanyOverview, getCoverageReport: exports.getCoverageReport, getLineStats: exports.getLineStats, getProductivityStats: exports.getProductivityStats, getAdjustmentsReport: exports.getAdjustmentsReport, getPriorityTimesReport: exports.getPriorityTimesReport };
+const getBulkRequestsReport = async (req, res) => {
+    try {
+        const branchId = req.query.branch_id ? parseInt(req.query.branch_id) : undefined;
+        const status = req.query.status;
+        const dateFrom = req.query.date_from;
+        const dateTo = req.query.date_to;
+        const report = await ReportsService_1.default.getBulkRequestsReport({
+            branch_id: branchId,
+            status,
+            date_from: dateFrom,
+            date_to: dateTo
+        });
+        res.json(report);
+    }
+    catch (error) {
+        logger_1.logger.error('Get Bulk Requests Report error:', error);
+        res.status(500).json({ error: 'Failed to generate bulk requests report' });
+    }
+};
+exports.getBulkRequestsReport = getBulkRequestsReport;
+exports.default = { getAuditKPIs: exports.getAuditKPIs, getCompanyOverview: exports.getCompanyOverview, getCoverageReport: exports.getCoverageReport, getLineStats: exports.getLineStats, getProductivityStats: exports.getProductivityStats, getAdjustmentsReport: exports.getAdjustmentsReport, getPriorityTimesReport: exports.getPriorityTimesReport, getBulkRequestsReport: exports.getBulkRequestsReport };
 //# sourceMappingURL=reportsController.js.map

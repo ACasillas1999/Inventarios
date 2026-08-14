@@ -63,6 +63,8 @@ const listRequests = async (req, res) => {
             count_id,
             priority: req.query.priority,
             surtidor_id: roleId === 4 ? userId : undefined,
+            date_from: req.query.date_from,
+            date_to: req.query.date_to,
             limit,
             offset
         });
